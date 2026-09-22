@@ -1,0 +1,6 @@
+coqui-tts==0.27.3
+transformers>=4.47,<5
+g2p-id==0.0.4
+num2words>=0.5,<1
+onnxruntime>=1.17,<2
+requests>=2.32,<3

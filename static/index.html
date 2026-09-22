@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="id">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Dubbing Studio — Belajar dalam bahasa Anda</title><link rel="stylesheet" href="/static/style.css"></head>
+<body>
+<aside class="sidebar">
+  <a class="brand" href="/"><span class="brand-icon">d<span>•</span></span><span>Dubbing<span class="brand-light">Studio</span></span></a>
+  <div class="workspace">RUANG BELAJAR</div>
+  <button class="nav active" id="newProject"><span>▣</span> Studio video <span class="nav-dot"></span></button>
+  <div class="workspace history-label">PROYEK TERAKHIR</div><div id="history" class="history"><p class="muted">Proyek Anda akan muncul di sini.</p></div>
+  <div class="sidebar-bottom"><span class="online-dot"></span> Berjalan di komputer Anda<p>Video tersimpan secara lokal.</p></div>
+</aside>
+<main>
+  <header><div class="breadcrumb">Ruang belajar <span>/</span> <strong>Studio video</strong></div><span class="badge">EN <span>→</span> ID</span></header>
+  <div class="page">
+    <div class="eyebrow"><span></span> PAHAMI SETIAP PENJELASAN</div>
+    <h1>Bahasa berbeda.<br><span>Ilmu tetap sampai.</span></h1>
+    <p class="intro">Ubah video bahasa Inggris menjadi pelajaran berbahasa Indonesia,<br class="desktop"> dengan terjemahan dan sulih suara Microsoft yang natural.</p>
+    <div class="steps"><span class="step current" id="step1"><b>1</b> Pilih video</span><i></i><span class="step" id="step2"><b>2</b> Periksa terjemahan</span><i></i><span class="step" id="step3"><b>3</b> Dubbing & belajar</span></div>
+    <div id="notice" class="notice hidden" role="alert"></div>
+    <section id="setup" class="setup-grid">
+      <article class="card source-card">
+        <div class="card-heading"><div><span class="section-kicker">01 / SUMBER</span><h2>Mulai dari video Anda</h2></div><span class="small-icon">↗</span></div>
+        <div class="tabs"><button class="tab selected" data-source="library">Pustaka kursus <span id="videoCount">0</span></button><button class="tab" data-source="upload">Unggah video</button></div>
+        <div id="libraryPanel"><label class="search-wrap"><span>⌕</span><input id="search" placeholder="Cari judul pelajaran…" aria-label="Cari video"></label><div id="library" class="library"><p class="muted">Memuat pustaka video…</p></div></div>
+        <div id="uploadPanel" class="hidden"><label class="upload-box" id="dropzone"><span class="upload-icon">↥</span><strong>Pilih video dari komputer</strong><span>atau tarik file ke area ini</span><small>MP4, MKV, MOV, WEBM, AVI, M4V · maks. 8 GB</small><input type="file" id="videoFile" accept=".mp4,.mkv,.mov,.webm,.avi,.m4v"></label><p id="uploadName" class="muted"></p></div>
+        <details class="subtitle-details"><summary>Gunakan subtitle sendiri <span>opsional</span></summary><p class="muted">Subtitle Inggris SRT / VTT akan digunakan sebagai sumber teks.</p><input type="file" id="subtitleFile" accept=".srt,.vtt"></details>
+        <div class="source-note"><span>✦</span><p>Subtitle kursus terdeteksi otomatis. Video tanpa subtitle akan ditranskripsi di komputer Anda.</p></div>
+      </article>
+      <article class="card settings-card"><span class="section-kicker">02 / SULIH SUARA</span><h2>Suara untuk belajar</h2><p class="muted" id="voiceProvider">Bahasa Indonesia · Microsoft Neural</p>
+        <label class="voice-choice selected"><input type="radio" name="voice" value="id-ID-ArdiNeural" checked><span class="avatar">A</span><span><strong>Ardi</strong><small>Pria · Bahasa Indonesia</small></span><span class="radio-dot"></span></label>
+        <label class="voice-choice"><input type="radio" name="voice" value="id-ID-GadisNeural"><span class="avatar female">G</span><span><strong>Gadis</strong><small>Wanita · Bahasa Indonesia</small></span><span class="radio-dot"></span></label>
+        <div class="setting"><label for="rate">Kecepatan bicara <output id="rateValue">Normal</output></label><input type="range" id="rate" min="-30" max="30" value="0" step="5"><div class="range-labels"><span>Lebih santai</span><span>Lebih cepat</span></div></div>
+        <label class="field-label" for="volume">Suara asli di latar</label><select id="volume"><option value="0">Hanya suara Indonesia</option><option value="0.08">Pelan · 8%</option><option value="0.15">Sedang · 15%</option><option value="0.3">Jelas · 30%</option></select>
+        <details class="advanced"><summary>Pengaturan layanan</summary><label class="field-label" for="tts">Mesin suara</label><select id="tts"><option value="edge">Microsoft Edge · tanpa API key</option><option value="azure">Azure Speech resmi · API key</option><option value=wikidepia>Wikidepia Ardi/Gadis · offline</option></select><label class="field-label" for="translator">Penerjemah</label><select id="translator"><option value="local" selected>Lokal di komputer · tanpa API key</option><option value="google">Google web · tanpa API key</option><option value="azure">Microsoft Translator · API key</option></select><label class="field-label" for="model">Transkripsi tanpa subtitle</label><select id="model"><option value="tiny.en">Whisper Tiny · paling ringan</option><option value="base.en" selected>Whisper Base · seimbang</option><option value="small.en">Whisper Small · lebih teliti</option></select><p class="muted">Azure menggunakan key dari environment Windows. Panduan tersedia di README.</p></details>
+        <button class="primary" id="start">Terjemahkan video <span>→</span></button><p class="privacy">Terjemahan default diproses di komputer. Internet diperlukan untuk suara Microsoft dan unduhan model pertama. Pilihan penerjemah online mengirim teks ke layanannya.</p>
+      </article>
+    </section>
+    <section id="project" class="hidden">
+      <div class="project-heading"><div><span class="section-kicker">PROYEK ANDA</span><h2 id="projectTitle"></h2></div><button class="secondary" id="back">+ Video baru</button></div>
+      <div class="card progress-card" aria-live="polite"><div class="progress-heading"><strong id="statusText"></strong><span id="percent"></span></div><div class="progress-track"><div id="progressBar"></div></div><div class="actions"><button id="cancel" class="text-button hidden">Batalkan proses</button><button id="retry" class="secondary hidden">Lanjutkan / coba lagi</button></div><p id="jobError" class="error hidden"></p></div>
+      <div id="result" class="card hidden"><div class="result-heading"><div><span class="section-kicker">SIAP DIPUTAR</span><h2>Belajar dalam bahasa Indonesia</h2></div><a id="downloadVideo" class="primary" download>Unduh video ↓</a></div><video id="player" controls preload="metadata"></video><div class="downloads" id="downloads"></div><p class="muted">Subtitle dapat dinyalakan melalui tombol CC. Audio Inggris asli juga tersedia sebagai track kedua pada pemutar yang mendukungnya.</p></div>
+      <div id="review" class="card hidden"><div class="review-heading"><div><span class="section-kicker">TEKS & TERJEMAHAN</span><h2>Periksa sebelum disuarakan</h2><p class="muted">Klik teks Indonesia untuk memperbaiki istilah atau meringkas kalimat.</p></div><button class="primary" id="render">Buat video dubbing →</button></div><div class="editor-toolbar"><span id="segmentCount"></span><button class="secondary" id="save">Simpan teks</button></div><div class="editor-labels"><span>WAKTU</span><span>BAHASA INGGRIS</span><span>BAHASA INDONESIA · DAPAT DIEDIT</span></div><div id="segments"></div><div id="warnings" class="warnings hidden"></div></div>
+    </section>
+    <footer><span>DUBBING STUDIO</span><span>Video Anda. Bahasa Anda. Ritme belajar Anda.</span></footer>
+  </div>
+</main><script src="/static/app.js"></script>
+</body></html>

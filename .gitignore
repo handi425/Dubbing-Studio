@@ -1,0 +1,7 @@
+.venv/
+.venv-drat/
+.venv-tts/
+data/
+__pycache__/
+.env
+*.log
