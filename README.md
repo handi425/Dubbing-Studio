@@ -4,21 +4,40 @@ Aplikasi lokal Windows untuk menerjemahkan video Inggris dan membuat sulih suara
 
 ## Menjalankan
 
-Klik dua kali **MULAI DUBBING.bat** pada folder kursus. Aplikasi terbuka di http://127.0.0.1:8765. Biarkan jendela server berjalan selama pemrosesan. Instalasi pertama memerlukan internet. Python 3.10–3.13 dan FFmpeg/FFprobe harus ada di PATH; keduanya sudah ditemukan pada komputer saat pembuatan aplikasi.
+Klik dua kali **MULAI DUBBING.bat** pada folder aplikasi. Aplikasi terbuka di http://127.0.0.1:8765. Biarkan jendela server berjalan selama pemrosesan. Instalasi pertama memerlukan internet. Python 3.11–3.13 dan FFmpeg/FFprobe harus ada di PATH.
 
-1. Pilih video dari pustaka kursus atau unggah video sendiri (maksimum 8 GB).
+1. Pilih satu atau beberapa video dari pustaka kursus, atau unggah beberapa video sekaligus (total unggahan kurang dari 8 GB). Pilihan **Pilih semua hasil** mengikuti pencarian; **Hapus pilihan** mengosongkan pilihan pustaka.
 2. Pilih suara **Ardi** (pria) atau **Gadis** (wanita), kecepatan, dan volume suara asli.
-3. Klik **Terjemahkan video**. Subtitle `.vtt`/`.srt` yang cocok dipakai otomatis, termasuk penamaan `CHP 1 ...` pada kursus ini. Anda bisa memilih subtitle Inggris sendiri.
+3. Klik **Terjemahkan video** untuk hasil MP4, atau **Hanya Audio** di bawahnya untuk sulih suara Indonesia dalam MP3. Subtitle `.vtt`/`.srt` yang cocok dipakai otomatis, termasuk penamaan `CHP 1 ...` pada kursus ini. Subtitle Inggris manual tersedia untuk pilihan satu video.
 4. Tanpa subtitle, Whisper mentranskripsi bahasa Inggris di CPU lokal. Model diunduh pada pemakaian pertama; proses dapat lambat pada video panjang.
-5. Periksa dan edit terjemahan, lalu klik **Buat video dubbing**.
-6. Putar atau unduh MP4, subtitle Indonesia/Inggris, dan transkrip bilingual.
+5. Untuk satu video, periksa dan edit terjemahan, lalu klik **Buat video dubbing** atau **Buat audio dubbing**. Untuk beberapa video, setiap video diterjemahkan dan dibuat sulih suaranya secara otomatis, berurutan sampai selesai.
+6. Pantau status setiap video pada **Antrean video**. Putar atau unduh hasil MP4/MP3 masing-masing, subtitle Indonesia/Inggris, dan transkrip bilingual. Klik proyek untuk mengedit terjemahan, membuat ulang hasil, membatalkan, atau mencoba kembali; kegagalan satu video tidak menghentikan video berikutnya.
+
+Mode **Hanya Audio** menyimpan `data/<id-proyek>/hasil.mp3`, tanpa membuat video baru. Pengaturan suara, kecepatan, dan volume suara asli juga berlaku untuk MP3.
 
 Hasil berada di `DubbingStudio/data/<id-proyek>/hasil.mp4`. Video asli tidak diubah. Riwayat proyek tetap tersedia setelah aplikasi ditutup. Proses berjalan satu per satu; tombol batalkan menunggu operasi jaringan/model yang sedang berjalan selesai. Setelah gangguan, klik **Lanjutkan / coba lagi**. Cache terjemahan dan audio dipakai kembali. Pada proses transkripsi yang terputus, transkripsi dimulai lagi.
+
+## Pustaka paket / playlist kursus
+
+Tab **Pustaka kursus** menampilkan paket kursus yang pernah dimuat. Pilih playlist untuk melihat video menurut bab/subfolder. Pencarian paket terpisah dari pencarian video; **Pilih semua hasil** hanya memilih video dalam playlist dan pencarian saat ini. Berpindah playlist mengosongkan pilihan video agar kursus tidak tercampur.
+
+Untuk menambah kursus, klik **+ Folder kursus** atau buka **Unggah video**:
+
+- **Daftarkan folder:** masukkan lokasi lengkap, misalnya `D:\Kursus\Nama Kursus`, lalu klik **Daftarkan folder**. Semua subfolder dipindai. Video tetap di lokasi asal sehingga cara ini sesuai untuk koleksi besar dan tidak menyalin file. Folder/drive asal harus tersedia saat pemrosesan.
+- **Unggah folder:** pilih folder kursus, periksa jumlah video yang terdeteksi, lalu klik **Simpan sebagai playlist**. Aplikasi menyalin video dan subtitle ke penyimpanan lokal satu file per giliran. Batas unggahan 8 GB berlaku per file; total kursus dapat lebih besar. Untuk file 8 GB atau lebih, gunakan **Daftarkan folder**.
+
+Format video yang dikenali: MP4, MKV, MOV, WEBM, AVI, M4V (termasuk ekstensi huruf besar). File lain dilewati, kecuali subtitle SRT/VTT. Nama video yang sama di bab berbeda tetap terpisah. Urutan nama menggunakan angka secara alami, sehingga pelajaran 2 mendahului pelajaran 10. Subtitle dengan nama yang cocok dipakai otomatis.
+
+Playlist tersimpan di `data/playlists/<id>/playlist.json`; salinan unggahan di subfolder `media`. Playlist tetap ada setelah browser/server ditutup, dan browser mengingat playlist terakhir. Pustaka lama tetap muncul sebagai playlist pertama. Klik **Pindai ulang** setelah menambah atau memindahkan video dalam folder yang terdaftar. Mendaftarkan lokasi folder yang sama memperbarui playlist yang sudah ada.
+
+Jika unggahan terputus atau dihentikan, playlist ditandai **Impor belum selesai**. Klik playlist tersebut, pilih kembali folder yang sama, lalu lanjutkan impor. File yang sudah tersimpan diperbarui pada lokasi yang sama tanpa menggandakan video. Pemrosesan dubbing tersedia setelah impor selesai. Jika folder lokal dipindah atau drive dilepas, aplikasi menampilkan keterangan folder tidak tersedia.
+
+Impor folder hanya membangun pustaka. Pilih video lalu klik **Terjemahkan video** atau **Hanya Audio** untuk memulai pemrosesan.
 
 ## Layanan dan koneksi
 
 - Suara default memakai layanan Microsoft Edge melalui [edge-tts](https://github.com/rany2/edge-tts), pustaka pihak ketiga, tanpa API key. Ini bukan SDK Azure resmi dan ketersediaannya dapat berubah.
-- Terjemahan default memakai model Inggris–Indonesia [Argos](https://github.com/argosopentech/argospm-index) melalui CTranslate2 di komputer. Model sekitar 65 MB diunduh sekali, kemudian dapat dipakai offline. Model sudah disiapkan pada komputer ini.
+- Terjemahan default memakai model Inggris–Indonesia [Argos](https://github.com/argosopentech/argospm-index) melalui CTranslate2 di komputer. Model sekitar 65 MB diunduh sekali, kemudian dapat dipakai offline.
 - Google web dan Microsoft Translator tersedia sebagai pilihan penerjemah online. Google web bukan Cloud Translation API resmi; layanan ini menolak permintaan saat pengujian, sehingga bukan pilihan utama.
 - Video tetap di komputer. Dengan penerjemah lokal, teks Inggris tetap lokal. **Untuk suara Microsoft, teks Indonesia dikirim ke Microsoft.** Bila memilih penerjemah online, teks Inggris juga dikirim ke layanan itu. Font antarmuka dimuat dari Google Fonts dengan fallback font sistem.
 - Transkripsi menggunakan [faster-whisper](https://github.com/SYSTRAN/faster-whisper) secara lokal setelah model tersedia.

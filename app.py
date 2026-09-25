@@ -5,6 +5,7 @@ import json
 import math
 import os
 import re
+import shutil
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -15,6 +16,7 @@ from werkzeug.exceptions import HTTPException
 from werkzeug.utils import secure_filename
 
 import engine
+from course_library import Courses
 
 BASE = Path(__file__).resolve().parent
 LIBRARY = Path(os.environ.get("DUBBING_LIBRARY", BASE.parent)).resolve()
@@ -24,6 +26,7 @@ app = Flask(__name__, static_folder="static", static_url_path="/static")
 app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 ** 3
 jobs = {}
 lock = threading.RLock()
+playlist_lock = threading.RLock()
 executor = ThreadPoolExecutor(max_workers=1)
 cancelled = set()
 ACTIVE = {"queued", "preparing", "rendering"}
@@ -75,7 +78,17 @@ def work(job_id, phase):
         with lock:
             job = copy.deepcopy(jobs[job_id])
         action = engine.prepare if phase == "prepare" else engine.render
-        action(job, lambda **values: update(job_id, **values), check)
+        def publish(**values):
+            if phase == "prepare" and job.get("auto_render") and values.get("status") == "review":
+                values.update(status="preparing", message="Terjemahan siap. Melanjutkan sulih suara…")
+            update(job_id, **values)
+        action(job, publish, check)
+        if phase == "prepare" and job.get("auto_render"):
+            check()
+            update(job_id, status="rendering", phase="render", progress=0)
+            with lock:
+                job = copy.deepcopy(jobs[job_id])
+            engine.render(job, lambda **values: update(job_id, **values), check)
     except engine.Cancelled:
         update(job_id, status="cancelled", message="Proses dibatalkan. Hasil sementara disimpan untuk dicoba kembali.")
     except Exception as error:
@@ -130,6 +143,9 @@ def options(data):
     model = data.get("model", "base.en")
     rate = int(data.get("rate", 0))
     volume = float(data.get("original_volume", 0))
+    output_mode = data.get("output_mode", "video")
+    if output_mode not in {"video", "audio"}:
+        raise ValueError("Format hasil tidak valid.")
     if voice not in engine.VOICES or tts not in {"edge", "azure", "wikidepia"} or translator not in {"local", "google", "azure"}:
         raise ValueError("Pilihan suara atau layanan tidak valid.")
     if model not in {"tiny.en", "base.en", "small.en"} or not -30 <= rate <= 30 or not 0 <= volume <= 0.5:
@@ -142,7 +158,7 @@ def options(data):
         from wikidepia import ready
         if not ready():
             raise ValueError("Wikidepia belum siap. Jalankan PASANG SUARA LOKAL.bat terlebih dahulu.")
-    return dict(voice=voice, tts=tts, translator=translator, model=model, rate=rate, original_volume=volume)
+    return dict(voice=voice, tts=tts, translator=translator, model=model, rate=rate, original_volume=volume, output_mode=output_mode)
 
 
 @app.before_request
@@ -188,6 +204,55 @@ def library():
     return jsonify(library_items())
 
 
+def courses():
+    return Courses(DATA, LIBRARY, BASE, associated_subtitle)
+
+
+@app.get("/api/playlists")
+def list_playlists():
+    with playlist_lock:
+        return jsonify(courses().list())
+
+
+@app.get("/api/playlists/<course_id>")
+def get_playlist(course_id):
+    with playlist_lock:
+        return jsonify(courses().detail(course_id))
+
+
+@app.post("/api/playlists")
+def add_playlist():
+    data = request.get_json()
+    with playlist_lock:
+        if data.get("kind") == "upload":
+            result = courses().begin_upload(data.get("name", ""), data.get("source_folder", ""))
+        else:
+            result = courses().add_local(data.get("folder", ""), data.get("name", ""))
+        return jsonify(result), 201
+
+
+@app.post("/api/playlists/<course_id>/files")
+def upload_playlist_file(course_id):
+    uploaded = request.files.get("file")
+    if not uploaded:
+        raise ValueError("Pilih file yang akan diimpor.")
+    with playlist_lock:
+        courses().upload(course_id, request.form.get("path", ""), uploaded)
+    return jsonify(ok=True)
+
+
+@app.post("/api/playlists/<course_id>/finish")
+def finish_playlist(course_id):
+    with playlist_lock:
+        return jsonify(courses().finish(course_id))
+
+
+@app.post("/api/playlists/<course_id>/refresh")
+def refresh_playlist(course_id):
+    with playlist_lock:
+        return jsonify(courses().detail(course_id, refresh=True))
+
+
 @app.get("/api/jobs")
 def list_jobs():
     with lock:
@@ -201,40 +266,64 @@ def get_job(job_id):
 
 
 @app.post("/api/jobs")
+@app.post("/api/jobs/batch")
 def create():
     data = request.form
     selected = options(data)
-    source = None
-    subtitle = None
-    if data.get("library_path"):
-        source = (LIBRARY / data["library_path"]).resolve()
-        if not source.is_relative_to(LIBRARY) or source.is_relative_to(BASE) or not source.is_file() or source.suffix.lower() not in engine.VIDEO_EXTENSIONS:
-            raise ValueError("Video tidak ditemukan dalam pustaka.")
-        subtitle = associated_subtitle(source)
-    upload = request.files.get("video")
-    if not source and (not upload or Path(upload.filename).suffix.lower() not in engine.VIDEO_EXTENSIONS):
+    sources = []
+    paths = list(dict.fromkeys(data.getlist("library_path")))
+    uploads = request.files.getlist("video")
+    if paths and uploads:
+        raise ValueError("Pilih video dari pustaka atau unggahan, bukan keduanya.")
+    for value in paths:
+        source, subtitle = courses().resolve(data.get("playlist_id", "default"), value)
+        sources.append((source, None, subtitle))
+    for upload in uploads:
+        if not upload.filename or Path(upload.filename).suffix.lower() not in engine.VIDEO_EXTENSIONS:
+            raise ValueError("Semua unggahan harus berupa video MP4, MKV, MOV, WEBM, AVI, atau M4V.")
+        sources.append((None, upload, None))
+    if not sources:
         raise ValueError("Pilih atau unggah video MP4, MKV, MOV, WEBM, AVI, atau M4V.")
     supplied = request.files.get("subtitle")
+    if supplied and len(sources) > 1:
+        raise ValueError("Subtitle manual hanya untuk satu video. Untuk banyak video, gunakan subtitle pustaka atau transkripsi otomatis.")
     if supplied and Path(supplied.filename).suffix.lower() not in {".srt", ".vtt"}:
         raise ValueError("Subtitle harus berformat SRT atau VTT.")
-    job_id = uuid.uuid4().hex
-    directory = DATA / job_id
-    directory.mkdir()
-    if not source:
-        source = directory / ("input" + Path(upload.filename).suffix.lower())
-        upload.save(source)
-    if supplied:
-        subtitle = directory / ("input" + Path(supplied.filename).suffix.lower())
-        supplied.save(subtitle)
-        if subtitle.stat().st_size > 5 * 1024 ** 2:
+    subtitle_bytes = supplied.read(5 * 1024 ** 2 + 1) if supplied else None
+    if subtitle_bytes is not None:
+        if len(subtitle_bytes) > 5 * 1024 ** 2:
             raise ValueError("Ukuran subtitle maksimal 5 MB.")
-    title = Path(upload.filename).stem if upload and not data.get("library_path") else source.stem
-    job = dict(id=job_id, title=title, source=str(source), subtitle=str(subtitle) if subtitle else None,
-               directory=str(directory), segments=[], warnings=[], **selected)
+    batch_id = uuid.uuid4().hex if len(sources) > 1 else None
+    created, directories = [], []
+    try:
+        for source, upload, subtitle in sources:
+            job_id = uuid.uuid4().hex
+            directory = DATA / job_id
+            directory.mkdir()
+            directories.append(directory)
+            title = Path(upload.filename).stem if upload else source.stem
+            if upload:
+                source = directory / ("input" + Path(upload.filename).suffix.lower())
+                upload.save(source)
+            if supplied:
+                subtitle = directory / ("input" + Path(supplied.filename).suffix.lower())
+                subtitle.write_bytes(subtitle_bytes)
+            created.append(dict(id=job_id, title=title, source=str(source), subtitle=str(subtitle) if subtitle else None,
+                                directory=str(directory), segments=[], warnings=[], batch_id=batch_id,
+                                playlist_id=data.get("playlist_id", "default") if paths else None,
+                                auto_render=bool(batch_id), **selected))
+    except Exception:
+        for directory in directories:
+            # Only remove fresh staging directories created by this request.
+            if directory.resolve().parent == DATA.resolve():
+                shutil.rmtree(directory)
+        raise
     with lock:
-        jobs[job_id] = job
-        submit(job, "prepare")
-    return jsonify(public(job)), 201
+        for job in created:
+            jobs[job["id"]] = job
+            submit(job, "prepare")
+        result = {"jobs": [public(job) for job in created]}
+        return jsonify(result if request.path.endswith("/batch") or len(created) > 1 else public(created[0])), 201
 
 
 @app.post("/api/jobs/<job_id>/save")
@@ -253,7 +342,7 @@ def save_edits(job_id):
         for segment, translated in zip(job["segments"], texts):
             segment["id"] = translated.strip()
         job.update(selected)
-        job.update(status="review", message="Perubahan disimpan. Buat video untuk menerapkan perubahan.")
+        job.update(status="review", message="Perubahan disimpan. Buat ulang hasil untuk menerapkan perubahan.")
         engine.write_subtitles(job["segments"], Path(job["directory"]))
         save(job)
         return jsonify(public(job))
@@ -293,14 +382,14 @@ def cancel(job_id):
 def file(job_id, name):
     with lock:
         job = find_job(job_id)
-        allowed = {"hasil.mp4", "subtitle.id.srt", "subtitle.en.srt", "subtitle.id.vtt", "subtitle.en.vtt", "transkrip.txt"}
+        allowed = {"hasil.mp4", "hasil.mp3", "subtitle.id.srt", "subtitle.en.srt", "subtitle.id.vtt", "subtitle.en.vtt", "transkrip.txt"}
         if name not in allowed:
             abort(404)
         path = Path(job["directory"]) / name
         if not path.is_file():
             abort(404)
-        if name == "hasil.mp4" and job["status"] != "done":
-            abort(409, "Buat video kembali untuk menerapkan perubahan terbaru.")
+        if name in {"hasil.mp4", "hasil.mp3"} and job["status"] != "done":
+            abort(409, "Buat hasil kembali untuk menerapkan perubahan terbaru.")
         filename = (secure_filename(job["title"]) or "video") + "-" + name
     return send_file(path, as_attachment=request.args.get("download") == "1", download_name=filename, conditional=True)
 

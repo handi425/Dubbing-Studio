@@ -5,3 +5,7 @@ data/
 __pycache__/
 .env
 *.log
+.publish/
+vendor/
+.env.*
+*.pyc

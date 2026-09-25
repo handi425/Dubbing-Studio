@@ -238,7 +238,8 @@ def prepare(job, update, check):
         segment["id"] = cache[key]
         update(progress=40 + 59 * (i + 1) / len(segments), message=f"Menerjemahkan {i + 1}/{len(segments)} bagian…")
     write_subtitles(segments, directory)
-    update(segments=segments, status="review", progress=100, message="Terjemahan siap. Periksa teks, lalu buat video dubbing.")
+    result_label = "audio dubbing" if job.get("output_mode") == "audio" else "video dubbing"
+    update(segments=segments, status="review", progress=100, message=f"Terjemahan siap. Periksa teks, lalu buat {result_label}.")
 
 
 def tempo_filter(ratio):
@@ -314,6 +315,23 @@ def render(job, update, check):
     source = Path(job["source"])
     info = probe(source, check)
     has_audio = any(s["codec_type"] == "audio" for s in info["streams"])
+    if job.get("output_mode") == "audio":
+        update(progress=95, message="Menyimpan sulih suara sebagai MP3…")
+        command = ["ffmpeg", "-y", "-v", "error", "-i", str(timeline)]
+        if job["original_volume"] > 0 and has_audio:
+            command += ["-i", str(source), "-filter_complex",
+                        f"[1:a:0]volume={job['original_volume']}[bg];[0:a:0][bg]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[mix]",
+                        "-map", "[mix]"]
+        else:
+            command += ["-map", "0:a:0"]
+        command += ["-vn", "-c:a", "libmp3lame", "-b:a", "160k", "-t", str(duration),
+                    str(directory / "hasil.partial.mp3")]
+        run(command, check)
+        check()
+        (directory / "hasil.partial.mp3").replace(directory / "hasil.mp3")
+        timeline.unlink(missing_ok=True)
+        update(status="done", progress=100, warnings=warnings, message="Audio dubbing MP3 siap diputar.")
+        return
     command = ["ffmpeg", "-y", "-v", "error", "-i", str(source), "-i", str(timeline),
                "-i", str(directory / "subtitle.id.srt"), "-map", "0:v:0"]
     if job["original_volume"] > 0 and has_audio:
