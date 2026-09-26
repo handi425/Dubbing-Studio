@@ -9,3 +9,6 @@ __pycache__/
 vendor/
 .env.*
 *.pyc
+.venv-build/
+build/
+dist/

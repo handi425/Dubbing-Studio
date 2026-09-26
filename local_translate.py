@@ -6,9 +6,11 @@ import zipfile
 from pathlib import Path
 
 import requests
+from runtime_paths import DATA, RESOURCES, FROZEN
 
-ROOT = Path(__file__).resolve().parent / "data" / "models"
-MODEL = ROOT / "translate-en_id-1_9"
+ROOT = DATA / "models"
+_bundled_model = RESOURCES / "models" / "translate-en_id-1_9"
+MODEL = _bundled_model if FROZEN and (_bundled_model / ".ready").is_file() else ROOT / "translate-en_id-1_9"
 URL = "https://argos-net.com/v1/translate-en_id-1_9.argosmodel"
 SHA256 = "fe5773201222806cfc802a094c5758ada6c25e10dbdd306d0c46bf200aac25fd"
 _translator = None

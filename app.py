@@ -17,12 +17,10 @@ from werkzeug.utils import secure_filename
 
 import engine
 from course_library import Courses
+from runtime_paths import BASE, DATA, LIBRARY, RESOURCES, configure
 
-BASE = Path(__file__).resolve().parent
-LIBRARY = Path(os.environ.get("DUBBING_LIBRARY", BASE.parent)).resolve()
-DATA = BASE / "data"
-DATA.mkdir(exist_ok=True)
-app = Flask(__name__, static_folder="static", static_url_path="/static")
+configure()
+app = Flask(__name__, static_folder=str(RESOURCES / "static"), static_url_path="/static")
 app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 ** 3
 jobs = {}
 lock = threading.RLock()
@@ -192,8 +190,11 @@ def index():
 @app.get("/api/info")
 def info():
     import shutil
+    import hashlib
     from wikidepia import ready
-    return jsonify(voices=engine.VOICES, ffmpeg=bool(shutil.which("ffmpeg") and shutil.which("ffprobe")),
+    return jsonify(app_id="dubbing-studio", version="1.0.0",
+                   storage_id=hashlib.sha256(str(DATA.resolve()).casefold().encode()).hexdigest(),
+                   voices=engine.VOICES, ffmpeg=bool(shutil.which("ffmpeg") and shutil.which("ffprobe")),
                    wikidepia=ready(),
                    azure_speech=bool(os.environ.get("AZURE_SPEECH_KEY") and os.environ.get("AZURE_SPEECH_REGION")),
                    azure_translator=bool(os.environ.get("AZURE_TRANSLATOR_KEY")))
@@ -217,7 +218,47 @@ def list_playlists():
 @app.get("/api/playlists/<course_id>")
 def get_playlist(course_id):
     with playlist_lock:
-        return jsonify(courses().detail(course_id))
+        result = courses().detail(course_id)
+    result["results"] = playlist_results(course_id)
+    return jsonify(result)
+
+
+def playlist_results(course_id):
+    root = Path(courses().read(course_id)["root"]).resolve()
+    with lock:
+        completed = [dict(id=job["id"], source=job.get("source", ""), directory=job["directory"],
+                          mode=job.get("output_mode", "video"))
+                     for job in jobs.values() if job.get("status") == "done" and job.get("source")]
+    latest = {}
+    for job in completed:
+        source = Path(job["source"]).resolve()
+        if not source.is_relative_to(root):
+            continue
+        relative = source.relative_to(root).as_posix()
+        filename = "hasil.mp3" if job["mode"] == "audio" else "hasil.mp4"
+        output = Path(job["directory"]) / filename
+        try:
+            stamp = output.stat().st_mtime_ns
+            if not output.is_file() or output.stat().st_size == 0:
+                continue
+        except OSError:
+            continue
+        key = (relative, job["mode"])
+        if key not in latest or stamp > latest[key][0]:
+            base = f"/api/jobs/{job['id']}"
+            latest[key] = (stamp, dict(job_id=job["id"], mode=job["mode"],
+                                      media_url=f"{base}/files/{filename}?v={stamp}",
+                                      download_url=f"{base}/files/{filename}?download=1",
+                                      source_url=f"{base}/source", source_available=source.is_file()))
+    result = {}
+    for (relative, mode), (_, media) in sorted(latest.items()):
+        result.setdefault(relative, []).append(media)
+    return result
+
+
+@app.get("/api/playlists/<course_id>/results")
+def get_playlist_results(course_id):
+    return jsonify(playlist_results(course_id))
 
 
 @app.post("/api/playlists")
@@ -250,7 +291,9 @@ def finish_playlist(course_id):
 @app.post("/api/playlists/<course_id>/refresh")
 def refresh_playlist(course_id):
     with playlist_lock:
-        return jsonify(courses().detail(course_id, refresh=True))
+        result = courses().detail(course_id, refresh=True)
+    result["results"] = playlist_results(course_id)
+    return jsonify(result)
 
 
 @app.get("/api/jobs")
@@ -392,6 +435,20 @@ def file(job_id, name):
             abort(409, "Buat hasil kembali untuk menerapkan perubahan terbaru.")
         filename = (secure_filename(job["title"]) or "video") + "-" + name
     return send_file(path, as_attachment=request.args.get("download") == "1", download_name=filename, conditional=True)
+
+
+@app.get("/api/jobs/<job_id>/source")
+def source_video(job_id):
+    with lock:
+        job = find_job(job_id)
+        if job.get("status") != "done" or job.get("output_mode") != "audio":
+            abort(409, "Pemutaran bersama tersedia setelah audio dubbing selesai.")
+        path = Path(job["source"])
+        if not path.is_file() or path.suffix.lower() not in engine.VIDEO_EXTENSIONS:
+            abort(404, "Video asli tidak tersedia. Sambungkan drive atau kembalikan folder sumber.")
+    mimetype = {".mp4": "video/mp4", ".m4v": "video/mp4", ".webm": "video/webm",
+                ".mov": "video/quicktime", ".mkv": "video/x-matroska", ".avi": "video/x-msvideo"}[path.suffix.lower()]
+    return send_file(path, mimetype=mimetype, conditional=True)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 const $ = id => document.getElementById(id);
 let library = [], selectedPaths = new Set(), sourceMode = 'library', activeId = null, currentJob = null, dirty = false, timer = null, editorId = null;
 let playlists = [], playlistId = null, loadingCourse = false, importing = false, stopImport = false, resumeCourse = null, courseRequest = 0;
+let libraryResults = {}, resultRefreshBusy = false, previewPlayback = null;
 const activeStates = ['queued', 'preparing', 'rendering'];
 const escapeHTML = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function notice(message) { $('notice').textContent = message; $('notice').classList.toggle('hidden', !message); }
@@ -51,7 +52,7 @@ async function refreshPlaylists() {
 }
 async function loadCourse(id, refresh = false) {
   const requestId = ++courseRequest;
-  loadingCourse = true; selectedPaths.clear(); library = []; playlistId = id;
+  loadingCourse = true; selectedPaths.clear(); library = []; libraryResults = {}; playlistId = id;
   $('courseTitle').textContent = playlists.find(c => c.id === id)?.name || 'Playlist';
   $('courseStatus').textContent = 'Memuat video dan bab…'; $('refreshCourse').disabled = true;
   renderPlaylists(); renderLibrary(); notice('');
@@ -59,6 +60,7 @@ async function loadCourse(id, refresh = false) {
     const course = await api(`playlists/${id}${refresh ? '/refresh' : ''}`, refresh ? {} : undefined);
     if (requestId !== courseRequest) return;
     library = course.videos;
+    libraryResults = course.results || {};
     const index = playlists.findIndex(c => c.id === id); if (index >= 0) playlists[index] = course;
     $('courseTitle').textContent = course.name;
     $('courseStatus').textContent = course.available ? `${library.length} video · ${new Set(library.map(v => v.folder)).size} bagian. Pilih video atau pilih semua hasil.` : 'Folder asal tidak tersedia. Sambungkan drive lalu klik Pindai ulang.';
@@ -131,6 +133,7 @@ $('importFolder').onclick = async () => {
 function renderLibrary() {
   const query = $('search').value.toLowerCase();
   const filtered = library.filter(v => (v.name + v.folder).toLowerCase().includes(query));
+  const scroll = $('library').scrollTop;
   $('library').innerHTML = '';
   let folder = null;
   for (const video of filtered) {
@@ -141,11 +144,84 @@ function renderLibrary() {
     button.setAttribute('aria-pressed', selectedPaths.has(video.path));
     button.innerHTML = `<span class="video-symbol">▷</span><span class="video-text"><strong>${escapeHTML(video.name.replace(/^CHP\s+\d+\s+/i,''))}</strong><small>${video.size_mb} MB · ${video.subtitle ? 'Subtitle Inggris tersedia' : 'Transkripsi otomatis'}</small></span><span class="video-select"></span>`;
     button.onclick = () => { if (selectedPaths.has(video.path)) selectedPaths.delete(video.path); else selectedPaths.add(video.path); renderLibrary(); };
-    $('library').append(button);
+    const row = document.createElement('div'); row.className = 'library-video-row'; row.append(button);
+    const results = libraryResults[video.path] || [];
+    if (results.length) {
+      const badge = document.createElement('small'); badge.className = 'dubbed-badge'; badge.textContent = '✓ Sudah dubbing'; button.querySelector('.video-text').append(badge);
+      const actions = document.createElement('div'); actions.className = 'library-result-actions';
+      results.forEach(result => {
+        const group = document.createElement('div'); group.className = 'library-result-group';
+        const format = result.mode === 'audio' ? 'MP3' : 'MP4';
+        const play = document.createElement('button'); play.className = 'secondary'; play.textContent = `Play ${format} ▶`; play.setAttribute('aria-label', `Play ${format}: ${video.name}`); play.onclick = () => openPreview(video.name, result);
+        const download = document.createElement('a'); download.className = 'secondary'; download.textContent = `Download ${format} ↓`; download.href = result.download_url; download.download = ''; download.setAttribute('aria-label', `Download ${format}: ${video.name}`);
+        group.append(play, download); actions.append(group);
+      });
+      row.append(actions);
+    }
+    $('library').append(row);
   }
   if (!filtered.length) $('library').innerHTML = '<p class="muted">Tidak ada video yang cocok. Anda juga bisa mengunggah video sendiri.</p>';
   updateSelection();
+  $('library').scrollTop = scroll;
 }
+async function refreshLibraryResults() {
+  if (!playlistId || loadingCourse || resultRefreshBusy) return;
+  const id = playlistId, requestId = courseRequest;
+  resultRefreshBusy = true;
+  try {
+    const results = await api(`playlists/${id}/results`);
+    if (id === playlistId && requestId === courseRequest && JSON.stringify(results) !== JSON.stringify(libraryResults)) {
+      libraryResults = results; renderLibrary();
+    }
+  } catch (_) { /* Retain the last known results during temporary disconnections. */ }
+  finally { resultRefreshBusy = false; }
+}
+setInterval(() => {
+  if (!document.hidden && !activeId && sourceMode === 'library' && !$('previewDialog').open) refreshLibraryResults();
+}, 5000);
+function updatePreviewControls() {
+  const video = $('previewVideo');
+  $('previewToggle').textContent = previewPlayback?.wantsPlay ? 'Pause Ⅱ' : 'Play ▶';
+  const duration = Number.isFinite(video.duration) ? video.duration : 0;
+  $('previewSeek').disabled = !duration;
+  $('previewSeek').max = duration;
+  $('previewSeek').value = video.currentTime || 0;
+  $('previewTime').textContent = `${timestamp(video.currentTime || 0)} / ${timestamp(duration)}`;
+}
+function stopPreview() {
+  previewPlayback?.dispose(); previewPlayback = null;
+  [$('previewVideo'), $('previewAudio')].forEach(media => { media.pause(); media.removeAttribute('src'); media.load(); });
+}
+function openPreview(title, result) {
+  stopPreview(); $('player').pause(); $('audioPlayer').pause();
+  const audioOnly = result.mode === 'audio';
+  $('previewTitle').textContent = title;
+  $('previewNote').textContent = audioOnly ? 'Video asli diputar bersama audio Indonesia. Play, pause, posisi, dan kecepatan mengendalikan keduanya; suara asli dibisukan.' : 'Video dengan sulih suara Indonesia.';
+  $('previewError').textContent = ''; $('previewError').classList.add('hidden');
+  $('previewDownload').href = result.download_url; $('previewDownload').textContent = audioOnly ? 'Download MP3 ↓' : 'Download MP4 ↓';
+  $('previewRate').value = '1'; $('previewVolume').value = '1';
+  const video = $('previewVideo'), audio = $('previewAudio');
+  video.muted = audioOnly; video.volume = 1; audio.volume = 1; audio.muted = false;
+  video.playbackRate = 1; audio.playbackRate = 1;
+  previewPlayback = new DubbingPlayback(video, audioOnly ? audio : null, updatePreviewControls, message => {
+    $('previewError').textContent = message; $('previewError').classList.remove('hidden');
+  });
+  video.src = audioOnly ? result.source_url : result.media_url;
+  if (audioOnly) audio.src = result.media_url;
+  if (!$('previewDialog').open) $('previewDialog').showModal();
+  previewPlayback.play();
+}
+$('closePreview').onclick = () => $('previewDialog').close();
+$('previewDialog').addEventListener('close', stopPreview);
+$('previewDialog').addEventListener('cancel', () => stopPreview());
+$('previewToggle').onclick = () => {
+  if (!previewPlayback) return;
+  $('previewError').classList.add('hidden');
+  if (previewPlayback.wantsPlay) previewPlayback.pause(); else previewPlayback.play();
+};
+$('previewSeek').oninput = () => previewPlayback?.seek(+$('previewSeek').value);
+$('previewRate').onchange = () => previewPlayback?.setRate(+$('previewRate').value);
+$('previewVolume').oninput = () => previewPlayback?.setVolume(+$('previewVolume').value);
 function updateSelection() {
   const count = sourceMode === 'library' ? selectedPaths.size : $('videoFile').files.length;
   $('selectionCount').textContent = `${count} video dipilih`;
@@ -246,7 +322,7 @@ async function openProject(id) {
   await poll();
 }
 async function newProject() {
-  try { await leaveEdits(); clearTimeout(timer); activeId = null; $('player').pause(); $('audioPlayer').pause(); $('setup').classList.remove('hidden'); $('project').classList.add('hidden'); $('step1').classList.add('current'); $('step2').classList.remove('current'); $('step3').classList.remove('current'); notice(''); }
+  try { await leaveEdits(); clearTimeout(timer); activeId = null; $('player').pause(); $('audioPlayer').pause(); $('setup').classList.remove('hidden'); $('project').classList.add('hidden'); $('step1').classList.add('current'); $('step2').classList.remove('current'); $('step3').classList.remove('current'); notice(''); await refreshLibraryResults(); }
   catch (error) { notice(error.message); }
 }
 $('back').onclick = newProject; $('newProject').onclick = newProject;

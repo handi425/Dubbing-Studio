@@ -63,5 +63,15 @@
     </section>
     <footer><span>DUBBING STUDIO</span><span>Video Anda. Bahasa Anda. Ritme belajar Anda.</span></footer>
   </div>
-</main><script src="/static/app.js"></script>
+</main>
+<dialog id="previewDialog" aria-labelledby="previewTitle" aria-describedby="previewNote">
+  <div class="preview-heading"><div><span class="section-kicker">HASIL DUBBING</span><h2 id="previewTitle"></h2></div><button id="closePreview" class="secondary" aria-label="Tutup pemutar">Tutup ✕</button></div>
+  <p id="previewNote" class="muted"></p>
+  <video id="previewVideo" playsinline preload="auto"></video><audio id="previewAudio" preload="auto" hidden></audio>
+  <p id="previewError" class="error hidden" role="alert"></p>
+  <div class="preview-controls"><button id="previewToggle" class="primary">Play ▶</button><output id="previewTime">00:00 / 00:00</output><a id="previewDownload" class="secondary" download>Download ↓</a></div>
+  <label class="field-label" for="previewSeek">Posisi pemutaran</label><input id="previewSeek" type="range" min="0" max="0" step="0.1" value="0" disabled>
+  <div class="preview-settings"><label for="previewRate">Kecepatan<select id="previewRate"><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label><label for="previewVolume">Volume suara Indonesia<input id="previewVolume" type="range" min="0" max="1" step="0.05" value="1"></label></div>
+</dialog>
+<script src="/static/playback.js"></script><script src="/static/app.js"></script>
 </body></html>

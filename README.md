@@ -1,5 +1,9 @@
 # Dubbing Studio
 
+Versi Windows `.exe`: lihat [WINDOWS-EXE.md](WINDOWS-EXE.md). File distribusi
+`dist/DubbingStudio.exe` membundel Python, FFmpeg, dan penerjemah lokal untuk
+Windows 10/11 x64. Build ulang melalui `packaging/build_windows.ps1`.
+
 Aplikasi lokal Windows untuk menerjemahkan video Inggris dan membuat sulih suara Indonesia dengan suara Microsoft Ardi atau Gadis.
 
 ## Video demo
