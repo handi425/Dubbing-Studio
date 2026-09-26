@@ -2,6 +2,14 @@
 
 Aplikasi lokal Windows untuk menerjemahkan video Inggris dan membuat sulih suara Indonesia dengan suara Microsoft Ardi atau Gadis.
 
+## Video demo
+
+Demonstrasi penggunaan Dubbing Studio (1 menit 43 detik). Klik tombol putar untuk menonton langsung.
+
+https://github.com/user-attachments/assets/dd0d5b8c-c99e-4b67-97eb-e1315e2b1b82
+
+[Unduh video demo MP4](https://github.com/handi425/Dubbing-Studio/raw/refs/heads/main/docs/dubbing-studio-demo.mp4)
+
 ## Menjalankan
 
 Klik dua kali **MULAI DUBBING.bat** pada folder aplikasi. Aplikasi terbuka di http://127.0.0.1:8765. Biarkan jendela server berjalan selama pemrosesan. Instalasi pertama memerlukan internet. Python 3.11–3.13 dan FFmpeg/FFprobe harus ada di PATH.
