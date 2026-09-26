@@ -56,7 +56,7 @@ class ApiTests(unittest.TestCase):
     def test_edit_validation_and_mutation(self):
         with tempfile.TemporaryDirectory() as directory:
             job = dict(id='test-edit', directory=directory, title='test', status='review',
-                       segments=[dict(start=0,end=2,en='Hello.',id='Halo.')], **app.options({}))
+                       segments=[dict(start=0,end=2,en='Hello.',id='Halo.')], **app.options({'tts': 'edge'}))
             app.jobs[job['id']] = job
             try:
                 headers = {'X-Dubbing-Studio':'1'}
@@ -80,7 +80,7 @@ class MediaTests(unittest.TestCase):
             def fake_speech(text, voice, rate, provider, target):
                 engine.run(['ffmpeg','-y','-v','error','-f','lavfi','-i','sine=frequency=600:duration=2',str(target)])
             job = dict(directory=directory, source=str(source), duration=5,
-                       segments=[dict(start=1,end=2,en='Hello.',id='Halo.'),dict(start=3,end=4,en='Welcome.',id='Selamat datang.')], **app.options({}))
+                       segments=[dict(start=1,end=2,en='Hello.',id='Halo.'),dict(start=3,end=4,en='Welcome.',id='Selamat datang.')], **app.options({'tts': 'edge'}))
             updates = []
             with patch.object(engine, 'synthesize', fake_speech):
                 engine.render(job, lambda **values: updates.append(values), lambda: None)

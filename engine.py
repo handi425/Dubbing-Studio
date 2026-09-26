@@ -18,8 +18,14 @@ from xml.sax.saxutils import escape
 import requests
 
 VOICES = {"id-ID-ArdiNeural": "Ardi · Pria", "id-ID-GadisNeural": "Gadis · Wanita"}
+from supertonic_voice import VOICES as SUPERTONIC_VOICES
+VOICES.update(SUPERTONIC_VOICES)
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".mov", ".webm", ".avi", ".m4v"}
 SAMPLE_RATE = 24000
+ISO639_2 = {'en':'eng','ar':'ara','bg':'bul','cs':'ces','da':'dan','de':'deu','el':'ell','es':'spa',
+ 'et':'est','fi':'fin','fr':'fra','hi':'hin','hu':'hun','id':'ind','it':'ita','ja':'jpn','ko':'kor',
+ 'lt':'lit','lv':'lav','nl':'nld','pl':'pol','pt':'por','ro':'ron','ru':'rus','sk':'slk','sl':'slv',
+ 'sv':'swe','tr':'tur','uk':'ukr','vi':'vie'}
 
 
 class Cancelled(Exception):
@@ -117,17 +123,18 @@ def stamp(seconds, vtt=False):
     return f"{hours:02}:{minutes:02}:{seconds:02}{'.' if vtt else ','}{milliseconds:03}"
 
 
-def write_subtitles(segments, directory):
-    for language in ("en", "id"):
+def write_subtitles(segments, directory, language='id'):
+    for language in dict.fromkeys(("en", language)):
         for extension in ("srt", "vtt"):
             vtt = extension == "vtt"
             rows = ["WEBVTT\n"] if vtt else []
             for i, segment in enumerate(segments, 1):
+                text = segment['en'] if language == 'en' else segment.get('id', '')
                 rows.append(f"{i}\n{stamp(segment['start'], vtt)} --> {stamp(segment['end'], vtt)}\n"
-                            f"{segment[language]}\n")
+                            f"{text}\n")
             (directory / f"subtitle.{language}.{extension}").write_text("\n".join(rows), encoding="utf-8")
     (directory / "transkrip.txt").write_text("\n\n".join(
-        f"[{stamp(s['start'])}]\nEN: {s['en']}\nID: {s['id']}" for s in segments), encoding="utf-8")
+        f"[{stamp(s['start'])}]\nEN: {s['en']}\n{language.upper()}: {s['id']}" for s in segments), encoding="utf-8")
 
 
 def retry(action, check, label):
@@ -145,16 +152,21 @@ def retry(action, check, label):
                 time.sleep(0.2)
 
 
-def translate_text(text, provider):
+def translate_text(text, provider, target='id', check=lambda: None, progress=lambda message: None, openrouter_model=None):
     if provider == "local":
         from local_translate import translate
-        translated = translate(text)
+        translated = translate(text, target, check, progress)
+    elif provider == 'openrouter':
+        from openrouter_translate import translate
+        check()
+        translated = translate(text, target, model=openrouter_model)
+        check()
     elif provider == "azure":
         key = os.environ.get("AZURE_TRANSLATOR_KEY")
         if not key:
             raise ValueError("Isi AZURE_TRANSLATOR_KEY dan AZURE_TRANSLATOR_REGION terlebih dahulu.")
         response = requests.post("https://api.cognitive.microsofttranslator.com/translate",
-            params={"api-version": "3.0", "from": "en", "to": "id"},
+            params={"api-version": "3.0", "from": "en", "to": target},
             headers={"Ocp-Apim-Subscription-Key": key,
                      "Ocp-Apim-Subscription-Region": os.environ.get("AZURE_TRANSLATOR_REGION", "")},
             json=[{"Text": text}], timeout=(10, 45))
@@ -163,7 +175,7 @@ def translate_text(text, provider):
     else:
         # Public web endpoint; availability is not guaranteed. Azure is the official alternative.
         response = requests.get("https://translate.googleapis.com/translate_a/single",
-            params={"client": "gtx", "sl": "en", "tl": "id", "dt": "t", "q": text}, timeout=(10, 45))
+            params={"client": "gtx", "sl": "en", "tl": target, "dt": "t", "q": text}, timeout=(10, 45))
         response.raise_for_status()
         translated = "".join(part[0] or "" for part in response.json()[0])
     if not translated.strip():
@@ -224,20 +236,26 @@ def prepare(job, update, check):
     segments = group_segments([dict(s, end=min(s["end"], duration)) for s in segments if s["start"] < duration])
     if not segments:
         raise ValueError("Tidak ditemukan ucapan atau subtitle pada durasi video ini.")
-    if job["translator"] == "local":
+    target_language = job.get('language', 'id')
+    openrouter_model = None
+    if job['translator'] == 'openrouter':
+        from ai_settings import read_user_settings
+        openrouter_model = read_user_settings()['openrouter_model']
+    if job["translator"] == "local" and target_language == 'id':
         from local_translate import ensure_model
         ensure_model(check, lambda message: update(message=message))
     cache_path = directory / "translation-cache.json"
     cache = json.loads(cache_path.read_text(encoding="utf-8")) if cache_path.exists() else {}
     for i, segment in enumerate(segments):
         check()
-        key = hashlib.sha256((job["translator"] + segment["en"]).encode()).hexdigest()
+        key = hashlib.sha256((job["translator"] + target_language + (openrouter_model or '') + segment["en"]).encode()).hexdigest()
         if key not in cache:
-            cache[key] = retry(lambda: translate_text(segment["en"], job["translator"]), check, "Terjemahan")
+            cache[key] = retry(lambda: translate_text(segment["en"], job["translator"], target_language,
+                check, lambda message: update(message=message), openrouter_model=openrouter_model), check, "Terjemahan")
             cache_path.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
         segment["id"] = cache[key]
         update(progress=40 + 59 * (i + 1) / len(segments), message=f"Menerjemahkan {i + 1}/{len(segments)} bagian…")
-    write_subtitles(segments, directory)
+    write_subtitles(segments, directory, target_language)
     result_label = "audio dubbing" if job.get("output_mode") == "audio" else "video dubbing"
     update(segments=segments, status="review", progress=100, message=f"Terjemahan siap. Periksa teks, lalu buat {result_label}.")
 
@@ -257,9 +275,14 @@ def render(job, update, check):
     duration = job["duration"]
     cache_dir = directory / "speech"
     cache_dir.mkdir(exist_ok=True)
-    local_voice = job["tts"] == "wikidepia"
+    local_voice = job["tts"] in {"wikidepia", "onnx", "supertonic"}
     if local_voice:
-        from wikidepia import generate
+        if job["tts"] == "supertonic":
+            from supertonic_voice import generate
+        elif job["tts"] == "onnx":
+            from local_voice import generate
+        else:
+            from wikidepia import generate
         generate(job, update, check)
     warnings = []
     timeline = directory / "dubbing.wav"
@@ -283,10 +306,16 @@ def render(job, update, check):
             if available < 0.05:
                 raise ValueError(f"Waktu bagian {i + 1} bertumpuk. Perbaiki subtitle sumber.")
             key = hashlib.sha256(json.dumps([segment["id"], job["voice"], job["rate"], job["tts"]]).encode()).hexdigest()
+            if job["tts"] == "supertonic":
+                from supertonic_voice import cache_key
+                key = cache_key(segment["id"], job)
+            elif job["tts"] == "onnx":
+                from local_voice import cache_key
+                key = cache_key(segment["id"], job)
             speech = cache_dir / (f"{key}.wav" if local_voice else f"{key}.mp3")
             if not speech.exists():
                 if local_voice:
-                    raise RuntimeError(f"Audio Wikidepia bagian {i + 1} belum dihasilkan. Coba lagi.")
+                    raise RuntimeError(f"Audio lokal bagian {i + 1} belum dihasilkan. Coba lagi.")
                 temporary = speech.with_suffix(".tmp.mp3")
                 retry(lambda: synthesize(segment["id"], job["voice"], job["rate"], job["tts"], temporary), check, "Suara Microsoft")
                 temporary.replace(speech)
@@ -310,7 +339,8 @@ def render(job, update, check):
             update(progress=(75 + 15 * (i + 1) / len(segments)) if local_voice else 90 * (i + 1) / len(segments),
                    message=f"Menyelaraskan suara {i + 1}/{len(segments)}…")
         silence(max(0, round(duration * SAMPLE_RATE) - position))
-    write_subtitles(segments, directory)
+    target_language = job.get('language', 'id')
+    write_subtitles(segments, directory, target_language)
     update(progress=93, message="Menggabungkan video, sulih suara, dan subtitle…")
     source = Path(job["source"])
     info = probe(source, check)
@@ -333,7 +363,7 @@ def render(job, update, check):
         update(status="done", progress=100, warnings=warnings, message="Audio dubbing MP3 siap diputar.")
         return
     command = ["ffmpeg", "-y", "-v", "error", "-i", str(source), "-i", str(timeline),
-               "-i", str(directory / "subtitle.id.srt"), "-map", "0:v:0"]
+               "-i", str(directory / f"subtitle.{target_language}.srt"), "-map", "0:v:0"]
     if job["original_volume"] > 0 and has_audio:
         command += ["-filter_complex", f"[0:a:0]volume={job['original_volume']}[bg];[1:a:0][bg]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[mix]",
                     "-map", "[mix]"]
@@ -345,8 +375,8 @@ def render(job, update, check):
     codec = next(s["codec_name"] for s in info["streams"] if s["codec_type"] == "video")
     command += ["-c:v", "copy"] if codec == "h264" else ["-c:v", "libx264", "-preset", "fast", "-crf", "20", "-pix_fmt", "yuv420p"]
     command += ["-c:a", "aac", "-b:a", "160k", "-c:s", "mov_text",
-                "-metadata:s:a:0", "language=ind", "-metadata:s:a:0", "title=Bahasa Indonesia",
-                "-disposition:a:0", "default", "-metadata:s:s:0", "language=ind",
+            "-metadata:s:a:0", f"language={target_language}", "-metadata:s:a:0", f"title={target_language.upper()} dubbing",
+                "-disposition:a:0", "default", "-metadata:s:s:0", f"language={ISO639_2[target_language]}",
                 "-movflags", "+faststart", "-t", str(duration), str(directory / "hasil.partial.mp4")]
     run(command, check)
     check()

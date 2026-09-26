@@ -1,0 +1,6 @@
+{
+  "name": "dubbing-studio-ui-tests",
+  "private": true,
+  "scripts": {"test": "node --test app.test.cjs"},
+  "devDependencies": {"jsdom": "26.1.0"}
+}

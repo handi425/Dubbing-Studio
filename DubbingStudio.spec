@@ -12,6 +12,11 @@ model = root / "data" / "models" / "translate-en_id-1_9"
 if not (model / ".ready").is_file():
     raise RuntimeError("Prepare the local translation model before building")
 datas.append((str(model), "models/translate-en_id-1_9"))
+voice_model = root / "data" / "models" / "supertonic-3"
+from supertonic_voice import FILES as voice_files
+if not all((voice_model / name).is_file() for name in [*voice_files, "LICENSE", "PROVENANCE.json"]):
+    raise RuntimeError("Run setup_supertonic.py before building")
+datas.append((str(voice_model), "models/supertonic-3"))
 binaries = []
 for program in ("ffmpeg", "ffprobe"):
     executable = shutil.which(program)
@@ -22,7 +27,7 @@ for package in ("faster_whisper", "sacremoses", "certifi", "edge_tts"):
     datas += collect_data_files(package)
 for package in ("ctranslate2", "onnxruntime", "av"):
     binaries += collect_dynamic_libs(package)
-for package in ("faster-whisper", "edge-tts", "sacremoses", "subword-nmt", "Flask"):
+for package in ("faster-whisper", "edge-tts", "sacremoses", "subword-nmt", "sentencepiece", "Flask"):
     datas += copy_metadata(package, recursive=True)
 # App-local MSVC runtime for native AI wheels on PCs without developer tools.
 system32 = Path(os.environ["SystemRoot"]) / "System32"
@@ -33,8 +38,9 @@ for name in ("msvcp140.dll", "msvcp140_1.dll", "msvcp140_2.dll", "msvcp140_atomi
 
 a = Analysis([str(root / "launch.py")], pathex=[str(root)], binaries=binaries, datas=datas,
              hiddenimports=["engine", "local_translate", "packaging_selftest", "ctranslate2.models",
-                            "tokenizers", "faster_whisper", "onnxruntime", "waitress", "edge_tts"],
+                            "tokenizers", "faster_whisper", "onnxruntime", "waitress", "edge_tts", "sentencepiece"],
              excludes=["torch", "tensorflow", "transformers", "scipy", "matplotlib", "pandas",
+                       "g2p_id",
                        "ctranslate2.converters", "ctranslate2.specs", "onnxruntime.tools"],
              noarchive=False)
 pyz = PYZ(a.pure)

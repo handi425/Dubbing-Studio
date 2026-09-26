@@ -6,7 +6,7 @@ if not exist ".venv\Scripts\python.exe" (
   python -m venv .venv
   if errorlevel 1 goto failed
 )
-".venv\Scripts\python.exe" -c "import flask, waitress, edge_tts, requests, faster_whisper, sacremoses, subword_nmt" >nul 2>&1
+".venv\Scripts\python.exe" -c "import flask, waitress, edge_tts, requests, faster_whisper, sacremoses, subword_nmt, g2p_id, num2words" >nul 2>&1
 if errorlevel 1 (
   echo Memasang komponen. Koneksi internet diperlukan...
   ".venv\Scripts\python.exe" -m pip install -r requirements.txt

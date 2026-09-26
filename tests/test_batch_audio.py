@@ -115,7 +115,7 @@ class AudioMediaTests(unittest.TestCase):
                     engine.run(['ffmpeg', '-y', '-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=600:duration=1', str(target)])
                 job = dict(directory=directory, source=str(source), duration=3,
                            segments=[dict(start=1, end=2, en='Hello.', id='Halo.')],
-                           **app.options({'output_mode': 'audio', 'original_volume': volume}))
+                           **app.options({'tts': 'edge', 'output_mode': 'audio', 'original_volume': volume}))
                 updates = []
                 with patch.object(engine, 'synthesize', speech):
                     engine.render(job, lambda **values: updates.append(values), lambda: None)

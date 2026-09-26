@@ -12,3 +12,4 @@ vendor/
 .venv-build/
 build/
 dist/
+node_modules/

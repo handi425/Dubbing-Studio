@@ -16,6 +16,7 @@ def run():
         import app
         import engine
         import local_translate
+        import supertonic_voice as local_voice
         import edge_tts
         import certifi
         import numpy as np
@@ -33,6 +34,8 @@ def run():
         translated = local_translate.translate("Hello. Welcome to this course.")
         assert translated and translated != "Hello. Welcome to this course."
         checks["local_translation"] = translated
+        assert local_voice.ready(), 'Bundled offline voice is missing'
+        assert client_info_default() == 'supertonic'
         vad = get_vad_model()
         vad(np.zeros(16384, dtype=np.float32))
         checks["whisper_vad"] = True
@@ -54,7 +57,8 @@ def run():
                 engine.synthesize = tone
             try:
                 job = dict(directory=directory, source=str(source), duration=6,
-                           segments=[dict(start=1, end=5, en="Welcome.", id="Selamat datang.")], **app.options({}))
+                           segments=[dict(start=1, end=5, en="Welcome.", id="Selamat datang.")],
+                           **app.options({'tts': 'edge' if online else 'supertonic'}))
                 for mode in ("audio", "video"):
                     updates = []
                     job["output_mode"] = mode
@@ -63,6 +67,19 @@ def run():
                     assert abs(engine.media_duration(output) - 6) < .2
                     assert updates[-1]["status"] == "done"
                     checks[f"render_{mode}"] = output.stat().st_size
+                if not online:
+                    import wave
+                    import array
+                    for voice in local_voice.VOICES:
+                        job['voice'] = voice
+                        local_voice.generate(job, lambda **values: None, lambda: None)
+                        sample = root / 'speech' / (local_voice.cache_key('Selamat datang.', job) + '.wav')
+                        with wave.open(str(sample), 'rb') as wav:
+                            assert wav.getnframes() > wav.getframerate() / 4
+                            assert max(map(abs, array.array('h', wav.readframes(wav.getnframes())))) > 100
+                    checks['offline_voices'] = list(local_voice.VOICES)
+                    assert 'torch' not in sys.modules and 'TTS' not in sys.modules
+                    checks['no_pytorch'] = True
                 if online:
                     checks["microsoft_tts"] = True
                     english = root / "english.mp3"
@@ -82,3 +99,8 @@ def run():
     target.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(report, ensure_ascii=True, indent=2), flush=True)
     return 0 if report["ok"] else 1
+
+
+def client_info_default():
+    import app
+    return app.app.test_client().get('/api/info').json['default_tts']

@@ -11,6 +11,14 @@ import webbrowser
 
 
 def main():
+    if '--supertonic-worker' in sys.argv:
+        from supertonic_voice import worker
+        worker(sys.argv[sys.argv.index('--supertonic-worker') + 1])
+        return 0
+    if '--voice-worker' in sys.argv:
+        from local_voice import worker
+        worker(sys.argv[sys.argv.index('--voice-worker') + 1])
+        return 0
     from runtime_paths import DATA, FROZEN, configure
     configure()
     logs = DATA.parent / "logs"

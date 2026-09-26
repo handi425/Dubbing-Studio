@@ -23,6 +23,10 @@ ffmpeg = Path(shutil.which("ffmpeg")).parent.parent
 for name in ("LICENSE", "README.txt"):
     shutil.copy2(ffmpeg / name, target / f"FFmpeg-{name}")
 shutil.copy2(root / "data/models/translate-en_id-1_9/README.md", target / "Argos-OPUS-model.md")
+shutil.copy2(root / "data/models/supertonic-3/LICENSE", target / "Supertonic-MODEL-LICENSE.txt")
+shutil.copy2(root / "data/models/supertonic-3/README.md", target / "Supertonic-model-card.md")
+shutil.copy2(root / "third_party/supertonic/LICENSE", target / "Supertonic-code-LICENSE.txt")
+shutil.copy2(root / "third_party/supertonic/UPSTREAM.md", target / "Supertonic-code-source.md")
 python_license = Path(sys.base_prefix) / "LICENSE.txt"
 if python_license.is_file():
     shutil.copy2(python_license, target / "Python-LICENSE.txt")

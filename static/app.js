@@ -2,11 +2,16 @@ const $ = id => document.getElementById(id);
 let library = [], selectedPaths = new Set(), sourceMode = 'library', activeId = null, currentJob = null, dirty = false, timer = null, editorId = null;
 let playlists = [], playlistId = null, loadingCourse = false, importing = false, stopImport = false, resumeCourse = null, courseRequest = 0;
 let libraryResults = {}, resultRefreshBusy = false, previewPlayback = null;
+let historyPageNumber = 1, historyLoad = 0;
+const historySelected=new Map();
+let historyVisible=[], watchLists=[], watchId=null, watchQueue=[], watchIndex=0;
 const activeStates = ['queued', 'preparing', 'rendering'];
 const escapeHTML = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function notice(message) { $('notice').textContent = message; $('notice').classList.toggle('hidden', !message); }
-async function api(path, body) {
-  const options = body === undefined ? {} : {method:'POST', headers:{'X-Dubbing-Studio':'1'}};
+async function api(path, body, signal) {
+  const options = body === undefined ? {} : {method:body?.method || 'POST', headers:{'X-Dubbing-Studio':'1'}};
+  if (signal) options.signal=signal;
+  if (body?.method === 'DELETE') body = undefined;
   if (body instanceof FormData) options.body = body;
   else if (body !== undefined) { options.headers['Content-Type'] = 'application/json'; options.body = JSON.stringify(body); }
   const response = await fetch('/api/' + path, options);
@@ -41,7 +46,12 @@ function renderPlaylists() {
         switchSource('upload');
       } else loadCourse(course.id).catch(e => notice(e.message));
     };
-    $('playlists').append(button);
+    if (course.id !== 'default') {
+      const row = document.createElement('div'); row.className='playlist-row'; row.append(button);
+      const remove=document.createElement('button'); remove.className='text-button'; remove.textContent='Hapus';
+      remove.onclick=async event=>{event.stopPropagation();if(!confirm(`Hapus playlist ?${course.name}?? Folder video lokal tidak akan dihapus.`))return;try{await api(`playlists/${course.id}`,{method:'DELETE'});await refreshPlaylists();if(playlistId===course.id)await loadCourse('default');}catch(error){notice(error.message);}};
+      row.append(remove); $('playlists').append(row);
+    } else $('playlists').append(button);
   }
   if (!$('playlists').children.length) $('playlists').innerHTML = '<p class="muted">Tidak ada playlist yang cocok.</p>';
 }
@@ -196,7 +206,7 @@ function openPreview(title, result) {
   stopPreview(); $('player').pause(); $('audioPlayer').pause();
   const audioOnly = result.mode === 'audio';
   $('previewTitle').textContent = title;
-  $('previewNote').textContent = audioOnly ? 'Video asli diputar bersama audio Indonesia. Play, pause, posisi, dan kecepatan mengendalikan keduanya; suara asli dibisukan.' : 'Video dengan sulih suara Indonesia.';
+  $('previewNote').textContent = audioOnly ? 'Video asli diputar bersama audio dubbing. Suara asli dibisukan.' : 'Video dengan sulih suara dalam bahasa pilihan.';
   $('previewError').textContent = ''; $('previewError').classList.add('hidden');
   $('previewDownload').href = result.download_url; $('previewDownload').textContent = audioOnly ? 'Download MP3 ↓' : 'Download MP4 ↓';
   $('previewRate').value = '1'; $('previewVolume').value = '1';
@@ -232,12 +242,30 @@ $('selectAll').onclick = () => { const query = $('search').value.toLowerCase(); 
 $('clearSelection').onclick = () => { selectedPaths.clear(); renderLibrary(); };
 document.querySelectorAll('[data-source]').forEach(button => button.onclick = () => switchSource(button.dataset.source));
 $('search').oninput = renderLibrary;
-document.querySelectorAll('[name=voice]').forEach(input => input.onchange = () => document.querySelectorAll('.voice-choice').forEach(label => label.classList.toggle('selected', label.querySelector('input').checked)));
 $('rate').oninput = () => $('rateValue').textContent = +$('rate').value === 0 ? 'Normal' : `${+$('rate').value > 0 ? '+' : ''}${$('rate').value}%`;
-$('tts').onchange = () => $('voiceProvider').textContent = $('tts').value === 'wikidepia' ? 'Bahasa Indonesia · Wikidepia lokal (data suara Azure)' : 'Bahasa Indonesia · Microsoft Neural';
+$('tts').onchange = () => {
+  const provider = $('tts').value;
+  const voices = providerVoices(provider), previous = $('voice').value;
+  if (provider !== 'supertonic' && $('language').value !== 'id') $('language').value = 'id';
+  $('voice').innerHTML = voices.map(([id,label]) => `<option value="${id}">${label}</option>`).join('');
+  $('voice').value = voices.some(([id]) => id === previous) ? previous : voices[0][0];
+  $('voiceProvider').textContent = provider === 'supertonic' ? 'Supertonic 3 | CPU | offline' : provider === 'onnx' ? 'Wikidepia ONNX | offline' : provider === 'wikidepia' ? 'Wikidepia lokal (data suara Azure)' : 'Microsoft Neural';
+  $('voiceNote').textContent = provider === 'supertonic' ? '10 preset suara dan 30 bahasa. Sintesis berjalan di CPU, tanpa internet dan tanpa API.' : 'Mesin suara ini hanya mendukung bahasa Indonesia.';
+  $('language').disabled = provider !== 'supertonic';
+};
+function providerVoices(provider) {
+  return provider === 'supertonic'
+    ? ['M1','M2','M3','M4','M5','F1','F2','F3','F4','F5'].map(v => [`supertonic-${v}`, `Supertonic ${v} | ${v[0] === 'M' ? 'Pria' : 'Wanita'}`])
+    : [['id-ID-ArdiNeural', 'Ardi - Pria'], ['id-ID-GadisNeural', 'Gadis - Wanita']];
+}
+function reviewVoices(provider, selected) {
+  const voices = providerVoices(provider);
+  $('reviewVoice').innerHTML = voices.map(([id, label]) => `<option value="${id}">${label}</option>`).join('');
+  $('reviewVoice').value = voices.some(([id]) => id === selected) ? selected : voices[0][0];
+}
 $('videoFile').onchange = () => { $('uploadName').textContent = [...$('videoFile').files].map(f => f.name).join(', '); updateSelection(); };
 ['dragover','dragleave','drop'].forEach(event => $('dropzone').addEventListener(event, e => { e.preventDefault(); $('dropzone').classList.toggle('drag', event === 'dragover'); if (event === 'drop' && e.dataTransfer.files.length) { const dt = new DataTransfer(); [...e.dataTransfer.files].forEach(file => dt.items.add(file)); $('videoFile').files = dt.files; $('videoFile').onchange(); } }));
-function settings() { return {voice: document.querySelector('[name=voice]:checked').value, rate:$('rate').value, original_volume:$('volume').value, tts:$('tts').value, translator:$('translator').value, model:$('model').value}; }
+function settings() { return {voice: $('voice').value, language: $('language').value, rate:$('rate').value, original_volume:$('volume').value, tts:$('tts').value, translator:$('translator').value, model:$('model').value}; }
 async function startProjects(outputMode) {
   notice('');
   if (importing || loadingCourse) return notice('Tunggu sampai folder selesai dimuat terlebih dahulu.');
@@ -267,7 +295,7 @@ function showJob(job) {
   const busy = activeStates.includes(job.status);
   const audioOnly = job.output_mode === 'audio';
   $('render').textContent = audioOnly ? 'Buat audio dubbing →' : 'Buat video dubbing →';
-  $('projectTitle').textContent = job.title; $('statusText').textContent = job.message;
+  $('projectTitle').textContent = job.title; $('statusText').textContent = job.message; document.querySelector('#result h2').textContent = `Belajar dalam ${job.language_name || 'Indonesia'}`;
   $('percent').textContent = `${Math.round(job.progress || 0)}%`; $('progressBar').style.width = `${job.progress || 0}%`;
   $('cancel').classList.toggle('hidden', !busy);
   $('retry').classList.toggle('hidden', !['error','cancelled','interrupted'].includes(job.status));
@@ -276,16 +304,22 @@ function showJob(job) {
   const editable = job.segments?.length > 0 && !busy;
   $('review').classList.toggle('hidden', !editable);
   if (editable && editorId !== job.id) {
+    grammarUndo=null; $('undoGrammar').classList.add('hidden');
     let voiceTools = $('reviewVoiceTools');
     if (!voiceTools) {
       voiceTools = document.createElement('div'); voiceTools.id = 'reviewVoiceTools'; voiceTools.className = 'review-voice-tools';
       voiceTools.innerHTML = '<label>Suara<select id="reviewVoice"><option value="id-ID-ArdiNeural">Ardi</option><option value="id-ID-GadisNeural">Gadis</option></select></label><label>Mesin suara<select id="reviewTts"></select></label>';
       $('segments').parentNode.insertBefore(voiceTools, $('segments').parentNode.querySelector('.editor-toolbar'));
       voiceTools.querySelectorAll('select').forEach(select => select.onchange = () => { dirty = true; $('save').textContent = 'Simpan perubahan'; });
+      $('reviewTts').onchange = () => { reviewVoices($('reviewTts').value); dirty = true; $('save').textContent = 'Simpan perubahan'; };
     }
     $('reviewTts').innerHTML = $('tts').innerHTML;
-    $('reviewVoice').value = job.voice; $('reviewTts').value = job.tts;
-    $('segments').innerHTML = job.segments.map((s,i) => `<div class="segment"><time>${timestamp(s.start)}<br>${timestamp(s.end)}</time><p>${escapeHTML(s.en)}</p><textarea aria-label="Terjemahan bagian ${i+1}" data-index="${i}">${escapeHTML(s.id)}</textarea></div>`).join('');
+    $('reviewTts').value = job.tts;
+    [...$('reviewTts').options].forEach(option=>{option.disabled=(job.language||'id')!=='id'&&option.value!=='supertonic';});
+    reviewVoices(job.tts, job.voice);
+    $('editorTargetLabel').textContent = `TERJEMAHAN ${String(job.language || 'id').toUpperCase()} | DAPAT DIEDIT`;
+    $('segments').innerHTML = job.segments.map((s,i) => `<div class="segment"><time>${timestamp(s.start)}<br>${timestamp(s.end)}</time><p>${escapeHTML(s.en)}</p><div class="segment-output"><textarea aria-label="Terjemahan bagian ${i+1}" data-index="${i}">${escapeHTML(s.id)}</textarea><button class="text-button improve-text" data-index="${i}">Grammar AI</button></div></div>`).join('');
+    $('segments').querySelectorAll('.improve-text').forEach(button=>button.onclick=async()=>{const area=$('segments').querySelector(`textarea[data-index="${button.dataset.index}"]`);button.disabled=true;button.textContent='Memproses';try{const result=await api(`jobs/${job.id}/improve/${button.dataset.index}`,{text:area.value});area.value=result.text;dirty=true;$('save').textContent='Simpan perubahan';}catch(error){notice(error.message);}finally{button.disabled=false;button.textContent='Grammar AI';}});
     $('segments').querySelectorAll('textarea').forEach(area => area.oninput = () => { dirty = true; $('save').textContent = 'Simpan perubahan'; });
     $('segmentCount').textContent = `${job.segments.length} bagian · ${timestamp(job.duration)} durasi video`;
     editorId = job.id;
@@ -298,39 +332,178 @@ function showJob(job) {
     $('player').classList.toggle('hidden', audioOnly); $('audioPlayer').classList.toggle('hidden', !audioOnly);
     if (player.dataset.job !== job.id) {
       player.src = base + filename;
-      if (!audioOnly) player.innerHTML = `<track kind="subtitles" src="${base}subtitle.id.vtt" srclang="id" label="Indonesia" default><track kind="subtitles" src="${base}subtitle.en.vtt" srclang="en" label="English">`;
+      if (!audioOnly) player.innerHTML = `<track kind="subtitles" src="${base}subtitle.${job.language || 'id'}.vtt" srclang="${job.language || 'id'}" label="${escapeHTML(job.language_name || job.language || 'Indonesia')}" default><track kind="subtitles" src="${base}subtitle.en.vtt" srclang="en" label="English">`;
       player.dataset.job = job.id;
     }
     $('downloadVideo').href = base + filename + '?download=1';
     $('downloadVideo').textContent = audioOnly ? 'Unduh audio MP3 ↓' : 'Unduh video ↓';
-    $('resultNote').textContent = audioOnly ? 'Audio sulih suara Indonesia dalam format MP3, dengan durasi mengikuti video sumber.' : 'Subtitle dapat dinyalakan melalui tombol CC. Audio Inggris asli juga tersedia sebagai track kedua pada pemutar yang mendukungnya.';
-    $('downloads').innerHTML = [['subtitle.id.srt','Subtitle Indonesia'],['subtitle.en.srt','Subtitle Inggris'],['transkrip.txt','Transkrip bilingual']].map(([name,label]) => `<a href="${base}${name}?download=1" download>${label} ↓</a>`).join('');
+    $('resultNote').textContent = audioOnly ? `Audio sulih suara ${job.language_name || 'Indonesia'} dalam format MP3, dengan durasi mengikuti video sumber.` : 'Subtitle dapat dinyalakan melalui tombol CC. Audio Inggris asli juga tersedia sebagai track kedua pada pemutar yang mendukungnya.';
+    $('downloads').innerHTML = [[`subtitle.${job.language || 'id'}.srt`,`Subtitle ${job.language_name || 'Indonesia'}`],['subtitle.en.srt','Subtitle Inggris'],['transkrip.txt','Transkrip']].map(([name,label]) => `<a href="${base}${name}?download=1" download>${label} ↓</a>`).join('');
   }
   const warnings = job.warnings || []; $('warnings').classList.toggle('hidden', !warnings.length); $('warnings').textContent = warnings.join('\n');
 }
 async function poll() {
   if (!activeId) return;
   const id = activeId;
-  try { const job = await api(`jobs/${id}`); if (activeId !== id) return; showJob(job); await history(); if (activeId === id) timer = setTimeout(poll, activeStates.includes(job.status) ? 1600 : 3500); }
+  try { const job = await api(`jobs/${id}`); if (activeId !== id) return; showJob(job); await refreshHistory(); if (activeId === id) timer = setTimeout(poll, activeStates.includes(job.status) ? 1600 : 3500); }
   catch (error) { notice(error.message + ' Mencoba menghubungkan kembali…'); if (activeId === id) timer = setTimeout(poll, 5000); }
 }
 async function leaveEdits() { if (dirty && activeId) await saveTexts(); }
 async function openProject(id) {
   await leaveEdits(); clearTimeout(timer); activeId = id; editorId = null;
   $('player').pause(); $('audioPlayer').pause();
-  $('setup').classList.add('hidden'); $('project').classList.remove('hidden'); notice('');
+  showWorkspaceView('project'); notice('');
   await poll();
 }
 async function newProject() {
-  try { await leaveEdits(); clearTimeout(timer); activeId = null; $('player').pause(); $('audioPlayer').pause(); $('setup').classList.remove('hidden'); $('project').classList.add('hidden'); $('step1').classList.add('current'); $('step2').classList.remove('current'); $('step3').classList.remove('current'); notice(''); await refreshLibraryResults(); }
+  try { await leaveEdits(); clearTimeout(timer); activeId = null; $('player').pause(); $('audioPlayer').pause(); showWorkspaceView('setup'); $('step1').classList.add('current'); $('step2').classList.remove('current'); $('step3').classList.remove('current'); notice(''); await refreshLibraryResults(); }
   catch (error) { notice(error.message); }
 }
+
+const jobStatusLabels = {queued:'Menunggu', preparing:'Menerjemahkan', rendering:'Membuat hasil', review:'Siap diperiksa', done:'Selesai', error:'Gagal', cancelled:'Dibatalkan', interrupted:'Terputus'};
+function showWorkspaceView(view) {
+  for (const id of ['setup','project','historyPage','playlistPage']) $(id).classList.toggle('hidden', id !== view);
+  document.querySelectorAll('.eyebrow, .page>h1, .intro, .steps').forEach(element => element.classList.toggle('hidden', ['historyPage','playlistPage'].includes(view)));
+  $('newProject').classList.toggle('active', view === 'setup' || view === 'project');
+  $('showHistory').classList.toggle('active', view === 'historyPage');
+  $('showPlaylists').classList.toggle('active', view === 'playlistPage');
+  document.querySelector('.breadcrumb strong').textContent = view === 'historyPage' ? 'History' : view === 'playlistPage' ? 'Playlist video' : 'Studio video';
+}
+function showSavedKey(configured) {
+  const input=$('openrouterKey');
+  input.readOnly=Boolean(configured);
+  input.value=configured?'***************':'';
+  input.placeholder=configured?'API key tersimpan':'Masukkan API key OpenRouter';
+  $('changeOpenrouterKey').classList.toggle('hidden',!configured);
+  $('openrouterKeyStatus').textContent=configured?'API key sudah tersimpan. Tanda bintang mewakili key Anda. Gunakan Ganti API key untuk menggantinya.':'Belum ada API key tersimpan.';
+}
+$('changeOpenrouterKey').onclick=()=>{ $('openrouterKey').readOnly=false; $('openrouterKey').value=''; $('openrouterKey').focus(); $('openrouterKeyStatus').textContent='Masukkan key baru, lalu Simpan. Kolom kosong tetap memakai key lama.'; };
+async function showHistoryPage() {
+  await leaveEdits(); clearTimeout(timer); activeId=null;
+  $('player').pause(); $('audioPlayer').pause();
+  showWorkspaceView('historyPage'); notice('');
+  await renderHistoryPage();
+}
+async function renderHistoryPage() {
+  const requestId=++historyLoad;
+  const result=await api(`history?page=${historyPageNumber}&page_size=${$('historyPageSize').value}`);
+  if(requestId!==historyLoad)return;
+  historyPageNumber=result.page;
+  $('historyTotal').textContent=`${result.total} proyek tersimpan`;
+  $('historyPageLabel').textContent=`Halaman ${result.page} dari ${result.pages}`;
+  $('historyPrev').disabled=result.page<=1; $('historyNext').disabled=result.page>=result.pages;
+  historyVisible=result.items;
+  $('history').replaceChildren();
+  if(!result.items.length){const row=$('history').insertRow();const cell=row.insertCell();cell.colSpan=6;cell.textContent='Belum ada proyek.';}
+  for(const job of result.items){
+    if(historySelected.has(job.id))historySelected.set(job.id,job);
+    const row=$('history').insertRow();row.className='history-entry';
+    const check=document.createElement('input');check.type='checkbox';check.dataset.job=job.id;
+    check.setAttribute('aria-label',`Pilih ${job.title}`);check.disabled=activeStates.includes(job.status);check.checked=historySelected.has(job.id);
+    check.onchange=()=>{if(check.checked)historySelected.set(job.id,job);else historySelected.delete(job.id);updateHistorySelection();};row.insertCell().append(check);
+    row.insertCell().textContent=job.title;
+    row.insertCell().textContent=jobStatusLabels[job.status]||job.status;
+    row.insertCell().textContent=job.language_name||'Indonesia';row.insertCell().textContent=job.output_mode==='audio'?'MP3':'MP4';
+    const actions=row.insertCell();actions.className='table-actions';
+    actions.append(actionButton('Play',()=>playHistory(job),!canPlay(job)));
+    const open=actionButton('Buka / Edit',()=>openProject(job.id));open.classList.add('history-open');actions.append(open);
+    if(job.media){const link=document.createElement('a');link.className='secondary';link.textContent='Unduh';link.href=job.media.download_url;link.setAttribute('download','');actions.append(link);}
+    const remove=actionButton('Hapus',async()=>{if(!confirm(`Hapus proyek "${job.title}" beserta seluruh hasilnya?`))return;await api(`jobs/${job.id}`,{method:'DELETE'});historySelected.delete(job.id);await renderHistoryPage();},activeStates.includes(job.status));remove.classList.add('text-button');actions.append(remove);
+  }
+  updateHistorySelection();
+}
+function actionButton(label,action,disabled=false){
+  const button=document.createElement('button');button.className='secondary';button.textContent=label;button.disabled=disabled;
+  button.onclick=async()=>{button.disabled=true;try{await action();}catch(error){notice(error.message);}finally{button.disabled=disabled;}};return button;
+}
+function canPlay(job){return Boolean(job.media && (job.media.mode!=='audio'||job.media.source_available));}
+function updateHistorySelection(){
+  const chosen=[...historySelected.values()], eligible=historyVisible.filter(job=>!activeStates.includes(job.status));
+  $('historySelection').textContent=`${chosen.length} dipilih (termasuk halaman lain)`;
+  $('historyDelete').disabled=!chosen.length;
+  $('historyPlaylist').disabled=!chosen.length || chosen.some(job=>!job.media);
+  const count=eligible.filter(job=>historySelected.has(job.id)).length;
+  $('historySelectPage').checked=eligible.length>0 && count===eligible.length;
+  $('historySelectPage').indeterminate=count>0 && count<eligible.length;$('historySelectPage').disabled=!eligible.length;
+}
+$('historySelectPage').onchange=()=>{for(const job of historyVisible.filter(job=>!activeStates.includes(job.status))){if($('historySelectPage').checked)historySelected.set(job.id,job);else historySelected.delete(job.id);}for(const input of $('history').querySelectorAll('input'))input.checked=historySelected.has(input.dataset.job);updateHistorySelection();};
+$('historyClear').onclick=()=>{historySelected.clear();for(const input of $('history').querySelectorAll('input'))input.checked=false;updateHistorySelection();};
+$('historyDelete').onclick=async()=>{
+  const ids=[...historySelected.keys()];if(!ids.length || !confirm(`Hapus ${ids.length} proyek terpilih beserta file hasilnya secara permanen? Tindakan ini tidak dapat diurungkan.`))return;
+  $('historyDelete').disabled=true;let removed=0;const errors=[];
+  for(const id of ids){try{await api(`jobs/${id}`,{method:'DELETE'});historySelected.delete(id);removed++;}catch(error){errors.push(error.message);}}
+  await renderHistoryPage();notice(`${removed} proyek dihapus.${errors.length?` ${errors.length} gagal: ${errors[0]}`:''}`);
+};
+function playHistory(job){watchQueue=[];$('watchTransport').classList.add('hidden');openPreview(job.title,job.media);}
+async function showPlaylistPage(){
+  await leaveEdits();clearTimeout(timer);activeId=null;$('player').pause();$('audioPlayer').pause();
+  showWorkspaceView('playlistPage');notice('');await refreshWatchlists();
+}
+async function refreshWatchlists(){
+  watchLists=await api('watch-playlists');$('watchPlaylists').replaceChildren();
+  if(!watchLists.some(item=>item.id===watchId))watchId=watchLists[0]?.id||null;
+  if(!watchLists.length)$('watchPlaylists').textContent='Belum ada playlist. Pilih hasil selesai di History, lalu Tambahkan ke playlist.';
+  for(const item of watchLists){const button=actionButton(`${item.name} (${item.items.length})`,()=>{watchId=item.id;renderWatchDetails();});button.setAttribute('aria-pressed',item.id===watchId);$('watchPlaylists').append(button);}
+  renderWatchDetails();
+}
+function renderWatchDetails(){
+  $('watchDetails').replaceChildren();const list=watchLists.find(item=>item.id===watchId);if(!list)return;
+  for(const [i,button] of [...$('watchPlaylists').children].entries())button.setAttribute('aria-pressed',watchLists[i]?.id===watchId);
+  const title=document.createElement('h3');title.textContent=list.name;$('watchDetails').append(title);
+  const actions=document.createElement('div');actions.className='selection-actions';
+  actions.append(actionButton('Play semua',()=>startWatch(list.items),!list.items.some(canPlay)),actionButton('Ganti nama',async()=>{const name=prompt('Nama playlist',list.name);if(name===null)return;await api(`watch-playlists/${list.id}`,{name});await refreshWatchlists();}),actionButton('Hapus playlist',async()=>{if(!confirm(`Hapus playlist "${list.name}"? Proyek dan hasil di History tetap disimpan.`))return;await api(`watch-playlists/${list.id}`,{method:'DELETE'});await refreshWatchlists();}));
+  const downloads=list.items.filter(job=>job.media);
+  if(downloads.length){const download=document.createElement('a');download.className='secondary';download.textContent=`Unduh semua (${downloads.length} hasil, ZIP)`;download.href=`/api/watch-playlists/${list.id}/download`;download.setAttribute('download','');actions.append(download);}
+  const downloadNote=document.createElement('p');downloadNote.className='muted';downloadNote.textContent='Unduh semua membuat satu ZIP berisi hasil MP4/MP3 yang tersedia. Hasil yang belum selesai atau telah dihapus dilewati.';
+  $('watchDetails').append(actions,downloadNote);
+  const wrap=document.createElement('div');wrap.className='table-scroll';const table=document.createElement('table');table.className='data-table';
+  table.innerHTML='<thead><tr><th>No.</th><th>Proyek</th><th>Status</th><th>Tindakan</th></tr></thead><tbody></tbody>';
+  const body=table.querySelector('tbody');
+  list.items.forEach((job,index)=>{const row=body.insertRow();row.insertCell().textContent=index+1;row.insertCell().textContent=job.title;row.insertCell().textContent=canPlay(job)?'Siap diputar':job.media?'Video sumber tidak tersedia':jobStatusLabels[job.status]||'Tidak tersedia';const cell=row.insertCell();cell.className='table-actions';cell.append(actionButton('Play',()=>startWatch(list.items,job.id),!canPlay(job)),actionButton('Buka / Edit',()=>openProject(job.id),job.status==='missing'),actionButton('Keluarkan',async()=>{await api(`watch-playlists/${list.id}`,{remove_ids:[job.id]});await refreshWatchlists();}));if(job.media){const link=document.createElement('a');link.className='secondary';link.textContent='Unduh';link.href=job.media.download_url;link.setAttribute('download','');cell.append(link);}});
+  wrap.append(table);$('watchDetails').append(wrap);
+}
+function startWatch(items,id){watchQueue=items.filter(canPlay);watchIndex=Math.max(0,watchQueue.findIndex(job=>job.id===id));playWatch();}
+function playWatch(){const job=watchQueue[watchIndex];if(!job)return;openPreview(job.title,job.media);$('watchTransport').classList.remove('hidden');$('watchPrevious').disabled=watchIndex===0;$('watchNext').disabled=watchIndex===watchQueue.length-1;$('watchPosition').textContent=`${watchIndex+1} / ${watchQueue.length}`;}
+$('watchPrevious').onclick=()=>{if(watchIndex>0){watchIndex--;playWatch();}};
+$('watchNext').onclick=()=>{if(watchIndex<watchQueue.length-1){watchIndex++;playWatch();}};
+$('previewVideo').addEventListener('ended',()=>{if($('previewDialog').open && watchQueue.length && watchIndex<watchQueue.length-1){queueMicrotask(()=>{$('watchNext').onclick();});}});
+$('previewDialog').addEventListener('close',()=>{watchQueue=[];$('watchTransport').classList.add('hidden');});
+$('playlistFromHistory').onclick=()=>showHistoryPage().catch(error=>notice(error.message));
+$('historyPlaylist').onclick=async()=>{try{watchLists=await api('watch-playlists');$('watchTarget').replaceChildren(new Option('Buat playlist baru',''));for(const list of watchLists)$('watchTarget').add(new Option(list.name,list.id));$('watchName').value='';$('watchName').disabled=false;$('watchCreateStatus').textContent=`${historySelected.size} hasil dipilih`;$('watchCreateDialog').showModal();}catch(error){notice(error.message);}};
+$('watchTarget').onchange=()=>{$('watchName').disabled=Boolean($('watchTarget').value);};
+$('watchCreateCancel').onclick=()=>$('watchCreateDialog').close();
+$('watchCreateSave').onclick=async()=>{
+  $('watchCreateSave').disabled=true;
+  try{const target=$('watchTarget').value;const payload={job_ids:[...historySelected.keys()]};if(!target)payload.name=$('watchName').value;
+    const list=await api(`watch-playlists${target?'/'+target:''}`,payload);watchId=list.id;$('watchCreateDialog').close();historySelected.clear();await showPlaylistPage();
+  }catch(error){$('watchCreateStatus').textContent=error.message;}finally{$('watchCreateSave').disabled=false;}
+};
+$('historyPrev').onclick=async()=>{historyPageNumber=Math.max(1,historyPageNumber-1);try{await renderHistoryPage();}catch(error){notice(error.message);}};
+$('historyNext').onclick=async()=>{historyPageNumber++;try{await renderHistoryPage();}catch(error){notice(error.message);}};
+$('historyPageSize').onchange=async()=>{historyPageNumber=1;try{await renderHistoryPage();}catch(error){notice(error.message);}};
+
+async function openAiSettings() {
+  const dialog=$('settingsDialog'); $('settingsStatus').textContent='Memuat pilihan model gratis?';
+  try {
+    const [settings, models]=await Promise.all([api('settings'),api('openrouter/models')]);
+    $('openrouterModel').innerHTML=models.map(model=>`<option value="${escapeHTML(model.id)}">${escapeHTML(model.name)}</option>`).join('');
+    if (!models.some(model=>model.id===settings.openrouter_model)) $('openrouterModel').insertAdjacentHTML('beforeend',`<option value="${escapeHTML(settings.openrouter_model)}">${escapeHTML(settings.openrouter_model)}</option>`);
+    $('openrouterModel').value=settings.openrouter_model;
+    showSavedKey(settings.openrouter_configured);
+    $('settingsStatus').textContent='Pilih router otomatis atau model gratis yang tersedia.';
+    dialog.showModal();
+  } catch(error) {$('settingsStatus').textContent=error.message;dialog.showModal();}
+}
+$('openSettings').onclick=openAiSettings;
+$('openRouterSettings').onclick=openAiSettings;
+$('saveAiSettings').onclick=async()=>{const button=$('saveAiSettings');button.disabled=true;try{const result=await api('settings',{openrouter_key:$('openrouterKey').readOnly?'':$('openrouterKey').value,openrouter_model:$('openrouterModel').value});showSavedKey(result.openrouter_configured);$('settingsStatus').textContent='Pengaturan tersimpan di komputer ini.';}catch(error){$('settingsStatus').textContent=error.message;}finally{button.disabled=false;}};
+$('showHistory').onclick=()=>showHistoryPage().catch(error=>notice(error.message));
+$('showPlaylists').onclick=()=>showPlaylistPage().catch(error=>notice(error.message));
 $('back').onclick = newProject; $('newProject').onclick = newProject;
-async function history() {
-  const projects = await api('jobs'); $('history').innerHTML = '';
-  if (!projects.length) $('history').innerHTML = '<p class="muted">Proyek Anda akan muncul di sini.</p>';
-  const labels = {queued:'Menunggu', preparing:'Menerjemahkan', rendering:'Membuat hasil', review:'Siap diperiksa', done:'Selesai', error:'Gagal', cancelled:'Dibatalkan', interrupted:'Terputus'};
-  projects.forEach(job => { const button = document.createElement('button'); button.textContent = `${labels[job.status] || job.status} · ${job.output_mode === 'audio' ? 'MP3' : 'Video'} · ${job.title}`; button.title = button.textContent; button.onclick = () => openProject(job.id).catch(e => notice(e.message)); $('history').append(button); });
+async function refreshHistory() {
+  if (!currentJob?.batch_id || currentJob.id !== activeId) { $('batchQueue').classList.add('hidden'); return; }
+  const projects = await api('jobs');
+  const labels = jobStatusLabels;
   const batch = currentJob?.id === activeId && currentJob.batch_id ? projects.filter(job => job.batch_id === currentJob.batch_id).reverse() : [];
   $('batchQueue').classList.toggle('hidden', !batch.length);
   $('batchSummary').textContent = `${batch.filter(job => job.status === 'done').length}/${batch.length} video selesai`;
@@ -355,12 +528,92 @@ $('render').onclick = async () => {
 $('retry').onclick = async () => { try { if(dirty) await saveTexts(); await api(`jobs/${activeId}/retry`, {}); clearTimeout(timer); await poll(); } catch(e) { notice(e.message); } };
 $('cancel').onclick = async () => { try { await api(`jobs/${activeId}/cancel`, {}); } catch(e) { notice(e.message); } };
 window.addEventListener('beforeunload', e => { if (dirty || importing) { e.preventDefault(); e.returnValue = ''; } });
+let grammarRun=null, grammarUndo=null;
+const grammarAreas=()=>[...$('segments').querySelectorAll('textarea')];
+function cancelGrammar() {
+  if(grammarRun) grammarRun.controller.abort();
+  grammarRun=null; $('grammarAll').disabled=false; $('applyGrammar').disabled=true;
+}
+$('cancelGrammar').onclick=()=>{cancelGrammar();$('grammarDialog').close();};
+$('grammarDialog').addEventListener('cancel',cancelGrammar);
+$('grammarDialog').addEventListener('close',cancelGrammar);
+$('grammarAll').onclick=async()=>{
+  const originals=grammarAreas().map(area=>area.value);
+  if(!activeId || !originals.length) return;
+  if(originals.some(text=>!text.trim() || text.length>4000)){notice('Isi setiap bagian dengan 1 sampai 4000 karakter.');return;}
+  cancelGrammar();
+  const run={jobId:activeId, originals, results:[], controller:new AbortController()};
+  grammarRun=run; $('grammarAll').disabled=true; $('grammarPreview').replaceChildren();
+  $('grammarStatus').textContent='Memproses grammar seluruh bagian...';
+  $('grammarProgress').max=originals.length; $('grammarProgress').value=0;
+  $('grammarDialog').showModal();
+  try {
+    let offset=0;
+    while(offset<originals.length){
+      const items=[]; let size=0;
+      while(offset<originals.length && items.length<8 && size+originals[offset].length<=8000){
+        items.push({index:offset,text:originals[offset]}); size+=originals[offset].length; offset++;
+      }
+      const result=await api(`jobs/${run.jobId}/grammar`,{items},run.controller.signal);
+      if(grammarRun!==run)return;
+      if(!Array.isArray(result.items) || result.items.length!==items.length || result.items.some((item,i)=>item.index!==items[i].index || typeof item.text!=='string' || !item.text.trim())) throw new Error('Jawaban AI tidak valid. Teks asli tetap utuh.');
+      run.results.push(...result.items);
+      $('grammarProgress').value=offset;
+      $('grammarStatus').textContent=`Memeriksa ${offset}/${originals.length} bagian...`;
+    }
+    let changes=0, warnings=0;
+    for(const item of run.results){
+      const before=originals[item.index];
+      if(before===item.text && !item.warning)continue;
+      if(before!==item.text)changes++;
+      if(item.warning)warnings++;
+      const row=document.createElement('section'); row.className='grammar-change';
+      const title=document.createElement('strong');title.textContent=`Bagian ${item.index+1}`;
+      const oldText=document.createElement('p');oldText.textContent=`Sebelum: ${before}`;
+      const newText=document.createElement('p');newText.textContent=`Usulan: ${item.text}`;
+      row.append(title,oldText,newText);
+      if(item.warning){const warning=document.createElement('p');warning.className='muted';warning.textContent=item.warning;row.append(warning);}
+      $('grammarPreview').append(row);
+    }
+    $('grammarStatus').textContent=`Selesai: ${changes} bagian diusulkan berubah, ${warnings} usulan ditolak otomatis. Tinjau sebelum menerapkan. Teks belum disimpan.`;
+    $('applyGrammar').disabled=changes===0;
+  } catch(error){
+    if(grammarRun!==run)return;
+    $('grammarStatus').textContent=`${error.message} Tidak ada perubahan yang diterapkan.`;
+    $('applyGrammar').disabled=true;
+  }
+};
+$('applyGrammar').onclick=()=>{
+  const run=grammarRun, areas=grammarAreas();
+  if(!run || run.results.length!==run.originals.length)return;
+  if(activeId!==run.jobId || areas.length!==run.originals.length || areas.some((area,i)=>area.value!==run.originals[i])){
+    $('grammarStatus').textContent='Editor berubah selama pemrosesan. Batalkan dan jalankan ulang agar edit Anda tetap utuh.'; $('applyGrammar').disabled=true;return;
+  }
+  const after=run.results.map(item=>item.text);
+  grammarUndo={jobId:run.jobId,before:run.originals,after};
+  areas.forEach((area,i)=>{area.value=after[i];});
+  dirty=true; $('save').textContent='Simpan perubahan'; $('undoGrammar').classList.remove('hidden');
+  cancelGrammar(); $('grammarDialog').close();
+};
+$('undoGrammar').onclick=()=>{
+  const undo=grammarUndo, areas=grammarAreas();
+  if(!undo || activeId!==undo.jobId || areas.length!==undo.after.length || areas.some((area,i)=>area.value!==undo.after[i])){notice('Teks sudah diedit lagi. Urungkan grammar tidak diterapkan agar edit terbaru tetap utuh.');return;}
+  areas.forEach((area,i)=>{area.value=undo.before[i];});
+  dirty=true; $('save').textContent='Simpan perubahan';grammarUndo=null;$('undoGrammar').classList.add('hidden');
+};
 (async () => {
   try { const [, info] = await Promise.all([refreshPlaylists(),api('info')]);
     let previous; try { previous = localStorage.getItem('dubbing-playlist'); } catch (_) {}
-    await loadCourse(playlists.find(c => c.id === previous && c.status === 'ready')?.id || 'default'); await history();
+    await loadCourse(playlists.find(c => c.id === previous && c.status === 'ready')?.id || 'default'); await refreshHistory();
     if (!info.ffmpeg) notice('FFmpeg belum tersedia. Pasang FFmpeg dan tambahkan folder bin ke PATH sebelum memproses video.');
     $('tts').querySelector('[value=azure]').disabled = !info.azure_speech; $('translator').querySelector('[value=azure]').disabled = !info.azure_translator;
     $('tts').querySelector('[value=wikidepia]').disabled = !info.wikidepia;
+    $('tts').querySelector('[value=onnx]').disabled = !info.onnx;
+    $('tts').querySelector('[value=supertonic]').disabled = !info.supertonic;
+    $('tts').value = info.default_tts || 'edge';
+    $('language').innerHTML = Object.entries(info.languages).map(([code,name]) => `<option value="${code}">${name}</option>`).join('');
+    $('language').value = info.default_language || 'id';
+    $('language').onchange = () => { const name=$('language').selectedOptions[0]?.textContent || 'ID'; document.querySelector('header .badge').innerHTML=`EN <span>→</span> ${escapeHTML($('language').value.toUpperCase())}`; };
+    $('tts').onchange();
   } catch(e) { notice(e.message); }
 })();
