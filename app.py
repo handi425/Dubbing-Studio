@@ -111,7 +111,7 @@ def submit(job, phase):
 def associated_subtitle(video):
     stem = re.sub(r"^CHP\s+\d+\s+", "", video.stem, flags=re.I)
     for name in (video.stem, stem):
-        for extension in (".vtt", ".srt"):
+        for extension in (".srt", ".vtt"):
             candidate = video.with_name(name + extension)
             if candidate.is_file():
                 return candidate
@@ -240,7 +240,7 @@ def info():
     from wikidepia import ready
     from local_voice import ready as onnx_ready
     from supertonic_voice import ready as supertonic_ready, LANGUAGES
-    return jsonify(app_id="dubbing-studio", version="1.1.2",
+    return jsonify(app_id="dubbing-studio", version="1.1.2", direct_subtitle_dubbing=True,
                    storage_id=hashlib.sha256(str(DATA.resolve()).casefold().encode()).hexdigest(),
                    voices=engine.VOICES, languages=LANGUAGES, default_language='id', ffmpeg=bool(shutil.which("ffmpeg") and shutil.which("ffprobe")),
                    wikidepia=ready(),

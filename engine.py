@@ -282,7 +282,7 @@ def prepare(job, update, check):
         from local_translate import ensure_model
         ensure_model(check, lambda message: update(message=message))
     cache_path = directory / "translation-cache.json"
-    cache = json.loads(cache_path.read_text(encoding="utf-8")) if cache_path.exists() else {}
+    cache = json.loads(cache_path.read_text(encoding="utf-8")) if source_language != target_language and cache_path.exists() else {}
     def save_translation_cache():
         temporary = cache_path.with_suffix('.tmp')
         temporary.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")

@@ -245,6 +245,7 @@ function updateSubtitleMode() {
   $('model').disabled = direct;
   $('translator').disabled = direct;
   $('start').innerHTML = direct ? 'Langsung dubbing dari subtitle <span>→</span>' : 'Terjemahkan video <span>→</span>';
+  $('step2').innerHTML = direct ? '<b>2</b> Siapkan subtitle' : '<b>2</b> Periksa terjemahan';
   if (direct) $('batchHint').textContent = 'Langsung membuat dubbing dari SRT/VTT, tanpa Whisper dan tanpa terjemahan. Subtitle wajib tersedia untuk setiap video.';
 }
 $('subtitleLanguage').onchange = updateSelection;
@@ -276,8 +277,21 @@ function reviewVoices(provider, selected) {
 $('videoFile').onchange = () => { $('uploadName').textContent = [...$('videoFile').files].map(f => f.name).join(', '); updateSelection(); };
 ['dragover','dragleave','drop'].forEach(event => $('dropzone').addEventListener(event, e => { e.preventDefault(); $('dropzone').classList.toggle('drag', event === 'dragover'); if (event === 'drop' && e.dataTransfer.files.length) { const dt = new DataTransfer(); [...e.dataTransfer.files].forEach(file => dt.items.add(file)); $('videoFile').files = dt.files; $('videoFile').onchange(); } }));
 function settings() { return {voice: $('voice').value, language: $('language').value, subtitle_language: $('subtitleLanguage').value, rate:$('rate').value, original_volume:$('volume').value, tts:$('tts').value, translator:$('translator').value, model:$('model').value}; }
+let startingProjects = false;
 async function startProjects(outputMode) {
+  if (startingProjects) return;
+  startingProjects = true;
+  try { await createProjects(outputMode); }
+  finally { startingProjects = false; }
+}
+async function createProjects(outputMode) {
   notice('');
+  if ($('subtitleLanguage').value === 'same') {
+    try {
+      const info = await api('info');
+      if (!info.direct_subtitle_dubbing) return notice('Server masih memakai versi lama. Tutup server Dubbing Studio, jalankan versi terbaru, lalu refresh halaman sebelum memulai dubbing.');
+    } catch (error) { return notice(error.message); }
+  }
   if (importing || loadingCourse) return notice('Tunggu sampai folder selesai dimuat terlebih dahulu.');
   if (sourceMode === 'library' && !selectedPaths.size) return notice('Pilih satu atau beberapa video dari pustaka kursus.');
   if (sourceMode === 'upload' && !$('videoFile').files.length) return notice('Pilih video yang ingin diterjemahkan.');
@@ -304,6 +318,8 @@ function showJob(job) {
   currentJob = job;
   const busy = activeStates.includes(job.status);
   const audioOnly = job.output_mode === 'audio';
+  const direct = job.subtitle_language === 'same';
+  $('step2').innerHTML = direct ? '<b>2</b> Siapkan subtitle' : '<b>2</b> Periksa terjemahan';
   $('render').textContent = audioOnly ? 'Buat audio dubbing →' : 'Buat video dubbing →';
   $('projectTitle').textContent = job.title; $('statusText').textContent = job.message; document.querySelector('#result h2').textContent = `Belajar dalam ${job.language_name || 'Indonesia'}`;
   $('percent').textContent = `${Math.round(job.progress || 0)}%`; $('progressBar').style.width = `${job.progress || 0}%`;
@@ -324,10 +340,10 @@ function showJob(job) {
     }
     $('reviewTts').innerHTML = $('tts').innerHTML;
     $('reviewTts').value = job.tts;
-    [...$('reviewTts').options].forEach(option=>{option.disabled=(job.language||'id')!=='id'&&option.value!=='supertonic';});
+    [...$('reviewTts').options].forEach(option=>{option.disabled=option.disabled||((job.language||'id')!=='id'&&option.value!=='supertonic');});
     reviewVoices(job.tts, job.voice);
-    $('editorTargetLabel').textContent = `TERJEMAHAN ${String(job.language || 'id').toUpperCase()} | DAPAT DIEDIT`;
-    $('segments').innerHTML = job.segments.map((s,i) => `<div class="segment"><time>${timestamp(s.start)}<br>${timestamp(s.end)}</time><p>${escapeHTML(s.en)}</p><div class="segment-output"><textarea aria-label="Terjemahan bagian ${i+1}" data-index="${i}">${escapeHTML(s.id)}</textarea></div></div>`).join('');
+    $('editorTargetLabel').textContent = `${direct ? 'TEKS DUBBING' : 'TERJEMAHAN'} ${String(job.language || 'id').toUpperCase()} | DAPAT DIEDIT`;
+    $('segments').innerHTML = job.segments.map((s,i) => `<div class="segment"><time>${timestamp(s.start)}<br>${timestamp(s.end)}</time><p>${escapeHTML(s.en)}</p><div class="segment-output"><textarea aria-label="Teks dubbing bagian ${i+1}" data-index="${i}">${escapeHTML(s.id)}</textarea></div></div>`).join('');
     $('segments').querySelectorAll('textarea').forEach(area => area.oninput = () => { dirty = true; $('save').textContent = 'Simpan perubahan'; });
     $('segmentCount').textContent = `${job.segments.length} bagian · ${timestamp(job.duration)} durasi video`;
     editorId = job.id;
@@ -368,8 +384,9 @@ async function newProject() {
   catch (error) { notice(error.message); }
 }
 
-const jobStatusLabels = {queued:'Menunggu', preparing:'Menerjemahkan', rendering:'Membuat hasil', review:'Siap diperiksa', done:'Selesai', error:'Gagal', cancelled:'Dibatalkan', interrupted:'Terputus'};
+const jobStatusLabels = {queued:'Menunggu', preparing:'Menyiapkan teks', rendering:'Membuat hasil', review:'Siap diperiksa', done:'Selesai', error:'Gagal', cancelled:'Dibatalkan', interrupted:'Terputus'};
 function showWorkspaceView(view) {
+  if (view === 'setup') updateSubtitleMode();
   for (const id of ['setup','project','historyPage','playlistPage']) $(id).classList.toggle('hidden', id !== view);
   document.querySelectorAll('.eyebrow, .page>h1, .intro, .steps').forEach(element => element.classList.toggle('hidden', ['historyPage','playlistPage'].includes(view)));
   $('newProject').classList.toggle('active', view === 'setup' || view === 'project');

@@ -87,6 +87,29 @@ test('same-language subtitles select direct dubbing without Whisper or translati
   assert.match(d.getElementById('start').textContent, /Terjemahkan video/);
 });
 
+test('direct dubbing rejects an old server before creating a project', async t => {
+  const {w, document:d, calls} = await boot(t);
+  d.getElementById('subtitleLanguage').value = 'same';
+  await d.getElementById('start').onclick();
+  assert.match(d.getElementById('notice').textContent, /Server masih memakai versi lama/);
+  assert.equal(calls.some(call => call.url === '/api/jobs/batch'), false);
+});
+
+test('all static action buttons are wired', async t => {
+  const {document:d} = await boot(t);
+  for (const button of d.querySelectorAll('button[id]')) {
+    assert.equal(typeof button.onclick, 'function', button.id);
+  }
+});
+
+test('direct dubbing editor uses text labels and keeps unavailable voices disabled', async t => {
+  const {w, document:d, job} = await boot(t);
+  w.showJob({...job, subtitle_language:'same', language:'id'});
+  assert.match(d.getElementById('editorTargetLabel').textContent, /TEKS DUBBING/);
+  assert.match(d.getElementById('step2').textContent, /Siapkan subtitle/);
+  assert.equal(d.querySelector('#reviewTts option[value=azure]').disabled, true);
+});
+
 test('startup exposes voice and Whisper dropdowns, with supported translators', async t => {
   const {document:d} = await boot(t);
   assert.equal(d.getElementById('voice').options.length, 10);

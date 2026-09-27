@@ -19,6 +19,10 @@ class SubtitleTests(unittest.TestCase):
             self.assertEqual(app.associated_subtitle(video), subtitle)
             video.with_suffix('.en.srt').write_text('subtitle', encoding='utf-8')
             self.assertIsNone(app.associated_subtitle(video))
+            plain = video.with_suffix('.srt')
+            plain.write_text('subtitle', encoding='utf-8')
+            video.with_suffix('.vtt').write_text('subtitle', encoding='utf-8')
+            self.assertEqual(app.associated_subtitle(video), plain)
 
     def test_vtt_settings_html_and_broken_sentence(self):
         with tempfile.TemporaryDirectory() as directory:

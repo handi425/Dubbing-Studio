@@ -21,6 +21,7 @@ class MultilingualTests(unittest.TestCase):
                     job = dict(directory=directory, source='video.mp4', subtitle=str(subtitle),
                                translator=provider, language=target, subtitle_language=selection)
                     updates = []
+                    (Path(directory) / 'translation-cache.json').write_text('broken old cache', encoding='utf-8')
                     with patch.object(engine.shutil, 'which', return_value='ffmpeg'), \
                             patch.object(engine, 'probe', return_value={'streams':[{'codec_type':'video'}]}), \
                             patch.object(engine, 'media_duration', return_value=3), \
