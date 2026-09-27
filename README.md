@@ -2,7 +2,7 @@
 
 [Unduh EXE Windows terbaru](https://github.com/handi425/Dubbing-Studio/releases/latest)
 
-Versi 1.1.1: Whisper multibahasa, Google web gratis dengan pemulihan bagian tertinggal, serta pengurutan tabel History dan Playlist.
+Versi 1.1.2: dubbing langsung tanpa terjemahan untuk subtitle berbahasa sama, serta audio intro/outro tetap terdengar.
 
 Versi Windows `.exe`: lihat [WINDOWS-EXE.md](WINDOWS-EXE.md). File distribusi
 `dist/DubbingStudio.exe` membundel Python, FFmpeg, dan penerjemah lokal untuk
@@ -30,6 +30,10 @@ Klik dua kali **MULAI DUBBING.bat** pada folder aplikasi. Aplikasi terbuka di ht
 6. Pantau status setiap video pada **Antrean video**. Putar atau unduh hasil MP4/MP3 masing-masing, subtitle sesuai bahasa keluaran dan Inggris, serta transkrip. Klik proyek untuk mengedit terjemahan, membuat ulang hasil, membatalkan, atau mencoba kembali; kegagalan satu video tidak menghentikan video berikutnya.
 
 Mode **Hanya Audio** menyimpan `data/<id-proyek>/hasil.mp3`, tanpa membuat video baru. Bahasa, pengaturan suara, kecepatan, dan volume suara asli juga berlaku untuk MP3.
+
+Audio asli dipertahankan di luar bagian ucapan, sehingga musik intro, outro, dan jeda tetap terdengar pada hasil MP4 maupun MP3. Pengaturan **Suara asli saat dubbing** hanya mengecilkan audio asli selama rentang subtitle/ucapan dan sampai suara dubbing selesai. Ini mengikuti waktu subtitle dan audio dubbing, bukan pemisahan musik/vokal; ucapan asli yang tidak tercatat dalam subtitle dapat tetap terdengar. Hasil lama perlu dibuat ulang untuk menerapkan perilaku ini.
+
+Untuk dubbing dari SRT/VTT yang sudah berbahasa tujuan (misalnya Indonesia ke Indonesia), pilih **Bahasa subtitle SRT / VTT → Sama dengan bahasa dubbing — tanpa terjemahan**. Teks subtitle langsung dipakai untuk suara tanpa memanggil Google atau model penerjemah lokal. Pilihan ini berlaku untuk subtitle manual dan subtitle pustaka, termasuk pemrosesan banyak video. Anda juga dapat memilih bahasa subtitle secara eksplisit; jika sama dengan bahasa dubbing, terjemahan dilewati. Video tanpa subtitle tetap menggunakan deteksi bahasa Whisper. Pada mode otomatis, Google menentukan bahasa subtitle, sedangkan penerjemah lokal menganggapnya Inggris.
 
 Hasil berada di `DubbingStudio/data/<id-proyek>/hasil.mp4`. Video asli tidak diubah. Riwayat proyek tetap tersedia setelah aplikasi ditutup. Proses berjalan satu per satu; tombol batalkan menunggu operasi jaringan/model yang sedang berjalan selesai. Setelah gangguan, klik **Lanjutkan / coba lagi**. Cache terjemahan dan audio dipakai kembali. Pada proses transkripsi yang terputus, transkripsi dimulai lagi.
 

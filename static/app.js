@@ -265,7 +265,7 @@ function reviewVoices(provider, selected) {
 }
 $('videoFile').onchange = () => { $('uploadName').textContent = [...$('videoFile').files].map(f => f.name).join(', '); updateSelection(); };
 ['dragover','dragleave','drop'].forEach(event => $('dropzone').addEventListener(event, e => { e.preventDefault(); $('dropzone').classList.toggle('drag', event === 'dragover'); if (event === 'drop' && e.dataTransfer.files.length) { const dt = new DataTransfer(); [...e.dataTransfer.files].forEach(file => dt.items.add(file)); $('videoFile').files = dt.files; $('videoFile').onchange(); } }));
-function settings() { return {voice: $('voice').value, language: $('language').value, rate:$('rate').value, original_volume:$('volume').value, tts:$('tts').value, translator:$('translator').value, model:$('model').value}; }
+function settings() { return {voice: $('voice').value, language: $('language').value, subtitle_language: $('subtitleLanguage').value, rate:$('rate').value, original_volume:$('volume').value, tts:$('tts').value, translator:$('translator').value, model:$('model').value}; }
 async function startProjects(outputMode) {
   notice('');
   if (importing || loadingCourse) return notice('Tunggu sampai folder selesai dimuat terlebih dahulu.');
@@ -562,6 +562,7 @@ window.addEventListener('beforeunload', e => { if (dirty || importing) { e.preve
     $('tts').value = info.default_tts || 'edge';
     $('language').innerHTML = Object.entries(info.languages).map(([code,name]) => `<option value="${code}">${name}</option>`).join('');
     $('language').value = info.default_language || 'id';
+    $('subtitleLanguage').insertAdjacentHTML('beforeend', Object.entries(info.languages).map(([code,name]) => `<option value="${code}">${escapeHTML(name)}</option>`).join(''));
     $('language').onchange = () => { const name=$('language').selectedOptions[0]?.textContent || 'ID'; document.querySelector('header .badge').innerHTML=`AUTO <span>→</span> ${escapeHTML($('language').value.toUpperCase())}`; };
     $('tts').onchange();
   } catch(e) { notice(e.message); }

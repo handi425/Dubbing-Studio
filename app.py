@@ -150,6 +150,9 @@ def options(data):
     volume = float(data.get("original_volume", 0))
     output_mode = data.get("output_mode", "video")
     language = data.get('language', 'id')
+    subtitle_language = data.get('subtitle_language', 'auto')
+    if subtitle_language not in {'auto', 'same', *LANGUAGES}:
+        raise ValueError('Bahasa subtitle tidak tersedia.')
     if output_mode not in {"video", "audio"}:
         raise ValueError("Format hasil tidak valid.")
     if voice not in engine.VOICES or tts not in {"edge", "azure", "wikidepia", "onnx", "supertonic"} or translator not in engine.TRANSLATORS:
@@ -172,7 +175,7 @@ def options(data):
         raise ValueError("Suara AI offline belum tersedia. Gunakan paket aplikasi dengan model suara ONNX.")
     if tts == "supertonic" and not supertonic_ready():
         raise ValueError("Supertonic 3 belum tersedia. Jalankan PASANG SUPERTONIC.bat atau gunakan EXE dengan model Supertonic.")
-    return dict(voice=voice, tts=tts, translator=translator, language=language, model=model, rate=rate, original_volume=volume, output_mode=output_mode)
+    return dict(voice=voice, tts=tts, translator=translator, language=language, subtitle_language=subtitle_language, model=model, rate=rate, original_volume=volume, output_mode=output_mode)
 
 
 def default_tts():
@@ -224,7 +227,7 @@ def info():
     from wikidepia import ready
     from local_voice import ready as onnx_ready
     from supertonic_voice import ready as supertonic_ready, LANGUAGES
-    return jsonify(app_id="dubbing-studio", version="1.0.0",
+    return jsonify(app_id="dubbing-studio", version="1.1.2",
                    storage_id=hashlib.sha256(str(DATA.resolve()).casefold().encode()).hexdigest(),
                    voices=engine.VOICES, languages=LANGUAGES, default_language='id', ffmpeg=bool(shutil.which("ffmpeg") and shutil.which("ffprobe")),
                    wikidepia=ready(),

@@ -211,6 +211,9 @@ def prepare(job, update, check):
     duration = media_duration(source, check)
     update(duration=duration, progress=3, message="Membaca video dan subtitle…")
     source_language = "auto" if job["translator"] != "local" else "en"
+    subtitle_language = job.get('subtitle_language', 'auto')
+    if job.get('subtitle') and subtitle_language != 'auto':
+        source_language = job.get('language', 'id') if subtitle_language == 'same' else subtitle_language
     transcript_path = directory / 'transcription.json'
     def identity(path):
         if not path:
@@ -223,6 +226,8 @@ def prepare(job, update, check):
             return [str(item.resolve()), None, None]
     signature = dict(source=identity(source), subtitle=identity(job.get('subtitle')),
                      model=job.get('model', 'base').removesuffix('.en'))
+    if job.get('subtitle'):
+        signature['subtitle_language'] = source_language
     cached_transcript = None
     if transcript_path.exists():
         try:
@@ -281,6 +286,7 @@ def prepare(job, update, check):
         temporary.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
         temporary.replace(cache_path)
     if source_language == target_language:
+        update(progress=40, message='Bahasa sumber sama dengan bahasa dubbing. Melewati terjemahan; memakai teks asli.')
         for segment in segments:
             segment["id"] = segment["en"]
     elif job["translator"] == "google":
@@ -303,7 +309,8 @@ def prepare(job, update, check):
             update(progress=40 + 59 * (i + 1) / len(segments), message=f"Menerjemahkan {i + 1}/{len(segments)} bagian…")
     write_subtitles(segments, directory, target_language)
     result_label = "audio dubbing" if job.get("output_mode") == "audio" else "video dubbing"
-    update(segments=segments, status="review", progress=100, message=f"Terjemahan siap. Periksa teks, lalu buat {result_label}.")
+    ready_message = 'Teks asli siap tanpa terjemahan.' if source_language == target_language else 'Terjemahan siap.'
+    update(segments=segments, status="review", progress=100, message=f"{ready_message} Periksa teks, lalu buat {result_label}.")
 
 
 def tempo_filter(ratio):
@@ -313,6 +320,45 @@ def tempo_filter(ratio):
         ratio /= 2
     filters.append(f"atempo={max(0.5, ratio):.8f}")
     return ",".join(filters)
+
+
+def background_envelope(path, duration, spans, volume, check):
+    """Keep original audio between speech spans; stream a bounded-size gain track."""
+    rate = 48000
+    total = round(duration * rate)
+    merged = []
+    for start, end in sorted(spans):
+        start, end = max(0, round(start * rate)), min(total, round(end * rate))
+        if end <= start:
+            continue
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    with wave.open(str(path), 'wb') as output:
+        output.setnchannels(1)
+        output.setsampwidth(2)
+        output.setframerate(rate)
+        def write_gain(frames, gain):
+            sample = round(32767 * gain).to_bytes(2, 'little', signed=True)
+            while frames > 0:
+                check()
+                count = min(frames, rate)
+                output.writeframesraw(sample * count)
+                frames -= count
+        position = 0
+        for start, end in merged:
+            write_gain(start - position, 1)
+            write_gain(end - start, volume)
+            position = end
+        write_gain(total - position, 1)
+
+
+def background_mix(original, dubbing, envelope):
+    return (f'[{original}]aformat=sample_rates=48000:channel_layouts=stereo[original];'
+            f'[{envelope}]aformat=sample_rates=48000:channel_layouts=mono,pan=stereo|c0=c0|c1=c0[gain];'
+            f'[original][gain]amultiply[bg];[{dubbing}][bg]'
+            'amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95:level=0[mix]')
 
 
 def render(job, update, check):
@@ -331,6 +377,7 @@ def render(job, update, check):
             from wikidepia import generate
         generate(job, update, check)
     warnings = []
+    speech_spans = []
     timeline = directory / "dubbing.wav"
     # Stream PCM to disk: memory use stays bounded for long lessons.
     with wave.open(str(timeline), "wb") as output:
@@ -382,6 +429,7 @@ def render(job, update, check):
             silence(start - position)
             output.writeframesraw(pcm)
             position = start + len(pcm) // 2
+            speech_spans.append((segment['start'], max(segment['end'], position / SAMPLE_RATE)))
             update(progress=(75 + 15 * (i + 1) / len(segments)) if local_voice else 90 * (i + 1) / len(segments),
                    message=f"Menyelaraskan suara {i + 1}/{len(segments)}…")
         silence(max(0, round(duration * SAMPLE_RATE) - position))
@@ -391,12 +439,15 @@ def render(job, update, check):
     source = Path(job["source"])
     info = probe(source, check)
     has_audio = any(s["codec_type"] == "audio" for s in info["streams"])
+    envelope = directory / 'background-gain.wav'
+    if has_audio:
+        background_envelope(envelope, duration, speech_spans, job['original_volume'], check)
     if job.get("output_mode") == "audio":
         update(progress=95, message="Menyimpan sulih suara sebagai MP3…")
         command = ["ffmpeg", "-y", "-v", "error", "-i", str(timeline)]
-        if job["original_volume"] > 0 and has_audio:
-            command += ["-i", str(source), "-filter_complex",
-                        f"[1:a:0]volume={job['original_volume']}[bg];[0:a:0][bg]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[mix]",
+        if has_audio:
+            command += ["-i", str(source), "-i", str(envelope), "-filter_complex",
+                        background_mix('1:a:0', '0:a:0', '2:a:0'),
                         "-map", "[mix]"]
         else:
             command += ["-map", "0:a:0"]
@@ -406,16 +457,17 @@ def render(job, update, check):
         check()
         (directory / "hasil.partial.mp3").replace(directory / "hasil.mp3")
         timeline.unlink(missing_ok=True)
+        envelope.unlink(missing_ok=True)
         update(status="done", progress=100, warnings=warnings, message="Audio dubbing MP3 siap diputar.")
         return
     command = ["ffmpeg", "-y", "-v", "error", "-i", str(source), "-i", str(timeline),
-               "-i", str(directory / f"subtitle.{target_language}.srt"), "-map", "0:v:0"]
-    if job["original_volume"] > 0 and has_audio:
-        command += ["-filter_complex", f"[0:a:0]volume={job['original_volume']}[bg];[1:a:0][bg]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[mix]",
+               "-i", str(directory / f"subtitle.{target_language}.srt")]
+    if has_audio:
+        command += ["-i", str(envelope), "-filter_complex", background_mix('0:a:0', '1:a:0', '3:a:0'),
                     "-map", "[mix]"]
     else:
         command += ["-map", "1:a:0"]
-    command += ["-map", "2:s:0"]
+    command += ["-map", "0:v:0", "-map", "2:s:0"]
     if has_audio:
         command += ["-map", "0:a:0", "-metadata:s:a:1", f"language={job.get('source_language', 'und')}", "-metadata:s:a:1", "title=Original audio", "-disposition:a:1", "0"]
     codec = next(s["codec_name"] for s in info["streams"] if s["codec_type"] == "video")
@@ -428,4 +480,5 @@ def render(job, update, check):
     check()
     (directory / "hasil.partial.mp4").replace(directory / "hasil.mp4")
     timeline.unlink(missing_ok=True)
+    envelope.unlink(missing_ok=True)
     update(status="done", progress=100, warnings=warnings, message="Video dubbing siap dipelajari.")

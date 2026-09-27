@@ -10,6 +10,39 @@ import google_translate
 
 
 class MultilingualTests(unittest.TestCase):
+    def test_same_language_subtitle_bypasses_all_translators_and_model_download(self):
+        for provider in ('google', 'local'):
+            for selection, target, text in [('same', 'id', 'Selamat datang di kursus ini.'),
+                                             ('id', 'id', 'Mari kita mulai belajar.'),
+                                             ('same', 'fr', 'Bonjour.')]:
+                with self.subTest(provider=provider, selection=selection, target=target), tempfile.TemporaryDirectory() as directory:
+                    subtitle = Path(directory) / 'input.srt'
+                    subtitle.write_text(f'1\n00:00:01,000 --> 00:00:02,500\n{text}\n', encoding='utf-8')
+                    job = dict(directory=directory, source='video.mp4', subtitle=str(subtitle),
+                               translator=provider, language=target, subtitle_language=selection)
+                    updates = []
+                    with patch.object(engine.shutil, 'which', return_value='ffmpeg'), \
+                            patch.object(engine, 'probe', return_value={'streams':[{'codec_type':'video'}]}), \
+                            patch.object(engine, 'media_duration', return_value=3), \
+                            patch.object(google_translate, 'translate_segments') as google, \
+                            patch.object(engine, 'translate_text') as translate, \
+                            patch('local_translate.ensure_model') as download:
+                        # Both the first run and resume must preserve the supplied text.
+                        engine.prepare(job, lambda **v: updates.append(v), lambda: None)
+                        engine.prepare(job, lambda **v: updates.append(v), lambda: None)
+                        google.assert_not_called()
+                        translate.assert_not_called()
+                        download.assert_not_called()
+                    self.assertEqual(job['source_language'], target)
+                    self.assertEqual(updates[-1]['segments'], [dict(start=1, end=2.5, en=text, id=text)])
+                    self.assertIn('tanpa terjemahan', updates[-1]['message'])
+                    self.assertIn(text, (Path(directory) / f'subtitle.{target}.srt').read_text(encoding='utf-8'))
+
+    def test_subtitle_language_options(self):
+        self.assertEqual(app.options({'tts':'edge', 'subtitle_language':'same'})['subtitle_language'], 'same')
+        with self.assertRaisesRegex(ValueError, 'Bahasa subtitle'):
+            app.options({'tts':'edge', 'subtitle_language':'invalid'})
+
     def test_auto_detection_reaches_translation_with_original_timing(self):
         with tempfile.TemporaryDirectory() as directory:
             factory = Mock()

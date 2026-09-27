@@ -124,6 +124,28 @@ class AudioMediaTests(unittest.TestCase):
                 self.assertAlmostEqual(float(media['format']['duration']), 3, delta=0.15)
                 self.assertFalse((root / 'hasil.mp4').exists())
                 self.assertEqual(updates[-1]['status'], 'done')
+                import array
+                import math
+                def amplitude(start, frequency):
+                    raw = engine.run(['ffmpeg', '-v', 'error', '-i', str(root / 'hasil.mp3'),
+                                      '-ss', str(start), '-t', '0.3', '-ar', '24000',
+                                      '-f', 's16le', '-ac', '1', 'pipe:1'])
+                    samples = array.array('h', raw)
+                    real = sum(v * math.cos(2 * math.pi * frequency * i / 24000) for i, v in enumerate(samples))
+                    imag = sum(v * math.sin(2 * math.pi * frequency * i / 24000) for i, v in enumerate(samples))
+                    return 2 * math.hypot(real, imag) / len(samples)
+                for start in (0.2, 2.6):
+                    if has_audio:
+                        self.assertGreater(amplitude(start, 220), 1500)
+                    else:
+                        self.assertLess(amplitude(start, 220), 10)
+                self.assertGreater(amplitude(1.3, 600), 1500)
+                during_speech = amplitude(1.3, 220)
+                if has_audio and volume:
+                    self.assertGreater(during_speech, 200)
+                    self.assertLess(during_speech, 800)
+                else:
+                    self.assertLess(during_speech, 40)
 
 
 if __name__ == '__main__':

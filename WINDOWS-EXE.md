@@ -47,3 +47,9 @@ Whisper multibahasa dengan bahasa sumber otomatis; Google web mengikuti bahasa d
 ## Versi 1.1.1 - Pemulihan terjemahan
 
 Bagian kosong dan kalimat panjang yang tidak berubah dicoba ulang secara terpisah sampai tiga putaran. Hasil berhasil disimpan per potongan. Jika masih belum selesai, aplikasi menampilkan nomor segmen dan tidak memulai dubbing. Pemeriksaan ini tidak menjamin akurasi bahasa. HTTP 429 diberi jeda percobaan ulang 60 dan 120 detik; penolakan terus-menerus tetap dilaporkan. Transkripsi dapat dilanjutkan dari checkpoint jika sumber, subtitle, dan model tidak berubah.
+
+## Versi 1.1.2 - Dubbing tanpa terjemahan dan musik intro/outro
+
+Pilih **Bahasa subtitle SRT / VTT → Sama dengan bahasa dubbing — tanpa terjemahan** untuk langsung memakai teks subtitle sebagai dubbing, termasuk Indonesia ke Indonesia. Bahasa subtitle juga dapat dipilih secara eksplisit; jika sama dengan bahasa tujuan, penerjemah dilewati. Berlaku untuk subtitle manual dan pustaka, termasuk batch.
+
+Audio asli di luar rentang ucapan dipertahankan pada hasil MP4 dan MP3, termasuk intro, outro, dan jeda. Pengaturan **Suara asli saat dubbing** berlaku selama rentang subtitle dan durasi suara dubbing. Ini bukan pemisahan musik/vokal; ucapan yang tidak tercatat dalam subtitle dapat tetap terdengar. Buat ulang hasil lama untuk menerapkan perubahan.

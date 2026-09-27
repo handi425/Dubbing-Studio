@@ -71,7 +71,7 @@ class ApiTests(unittest.TestCase):
 
 
 class MediaTests(unittest.TestCase):
-    def test_render_duration_tracks_and_initial_silence(self):
+    def test_render_duration_tracks_and_intro_music(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / 'source.mp4'
@@ -93,7 +93,7 @@ class MediaTests(unittest.TestCase):
             pcm = engine.run(['ffmpeg','-v','error','-i',str(result),'-map','0:a:0','-t','0.8','-f','s16le','-ac','1','pipe:1'])
             import array
             samples = array.array('h',pcm)
-            self.assertLess(max(abs(s) for s in samples),10)
+            self.assertGreater(max(abs(s) for s in samples),1000)
 
 
 if __name__ == '__main__':
