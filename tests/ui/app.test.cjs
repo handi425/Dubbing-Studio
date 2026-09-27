@@ -76,11 +76,13 @@ test('same-language subtitles select direct dubbing without Whisper or translati
   select.value = 'same';
   select.dispatchEvent(new w.Event('change'));
   assert.equal(d.getElementById('model').disabled, true);
+  assert.equal(d.getElementById('transcriptionSettings').classList.contains('hidden'), true);
   assert.equal(d.getElementById('translator').disabled, true);
   assert.match(d.getElementById('start').textContent, /Langsung dubbing/);
   select.value = 'auto';
   select.dispatchEvent(new w.Event('change'));
   assert.equal(d.getElementById('model').disabled, false);
+  assert.equal(d.getElementById('transcriptionSettings').classList.contains('hidden'), false);
   assert.equal(d.getElementById('translator').disabled, false);
   assert.match(d.getElementById('start').textContent, /Terjemahkan video/);
 });

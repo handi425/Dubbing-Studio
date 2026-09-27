@@ -241,6 +241,7 @@ function updateSelection() {
 }
 function updateSubtitleMode() {
   const direct = $('subtitleLanguage').value === 'same';
+  $('transcriptionSettings').classList.toggle('hidden', direct);
   $('model').disabled = direct;
   $('translator').disabled = direct;
   $('start').innerHTML = direct ? 'Langsung dubbing dari subtitle <span>→</span>' : 'Terjemahkan video <span>→</span>';
