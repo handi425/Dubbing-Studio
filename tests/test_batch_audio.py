@@ -27,6 +27,21 @@ class BatchTests(unittest.TestCase):
     def post(self, data, path='/api/jobs/batch'):
         return self.client.post(path, data=data, headers=self.headers)
 
+    def test_direct_dubbing_requires_subtitle_and_auto_renders_single_video(self):
+        with patch.object(app.executor, 'submit') as submit:
+            missing = self.post({'tts':'edge', 'subtitle_language':'same',
+                                 'video':(io.BytesIO(b'video'), 'lesson.mp4')})
+            self.assertEqual(missing.status_code, 400)
+            submit.assert_not_called()
+            self.assertEqual(app.jobs, {})
+            response = self.post({'tts':'edge', 'subtitle_language':'same',
+                                  'video':(io.BytesIO(b'video'), 'lesson.mp4'),
+                                  'subtitle':(io.BytesIO(b'1\n00:00:00,000 --> 00:00:01,000\nHalo.\n'), 'lesson.id.srt')})
+            self.assertEqual(response.status_code, 201)
+            job = next(iter(app.jobs.values()))
+            self.assertTrue(job['auto_render'])
+            self.assertTrue(Path(job['subtitle']).is_file())
+
     def test_multiple_uploads_auto_render_and_independent_downloads(self):
         data = MultiDict([('output_mode', 'audio'), ('video', (io.BytesIO(b'a'), 'one.mp4')),
                           ('video', (io.BytesIO(b'b'), 'two.mkv'))])

@@ -82,7 +82,8 @@ def work(job_id, phase):
         action = engine.prepare if phase == "prepare" else engine.render
         def publish(**values):
             if phase == "prepare" and job.get("auto_render") and values.get("status") == "review":
-                values.update(status="preparing", message="Terjemahan siap. Melanjutkan sulih suara…")
+                message = 'Teks subtitle siap. Langsung membuat sulih suara…' if job.get('subtitle_language') == 'same' else 'Terjemahan siap. Melanjutkan sulih suara…'
+                values.update(status="preparing", message=message)
             update(job_id, **values)
         action(job, publish, check)
         if phase == "prepare" and job.get("auto_render"):
@@ -114,6 +115,18 @@ def associated_subtitle(video):
             candidate = video.with_name(name + extension)
             if candidate.is_file():
                 return candidate
+    # Language-tagged sidecars, e.g. lesson.id.srt or lesson.en-US.vtt.
+    # Multiple tracks require an explicit manual choice instead of guessing.
+    names = {video.stem.casefold(), stem.casefold()}
+    candidates = []
+    for candidate in video.parent.iterdir():
+        if candidate.suffix.lower() not in {'.srt', '.vtt'} or not candidate.is_file():
+            continue
+        base, separator, language = candidate.stem.rpartition('.')
+        if separator and base.casefold() in names and re.fullmatch(r'[a-z]{2,3}(?:-[a-z]{2,4})?', language, re.I):
+            candidates.append(candidate)
+    if len(candidates) == 1:
+        return candidates[0]
     return None
 
 
@@ -564,6 +577,11 @@ def create():
         raise ValueError("Subtitle manual hanya untuk satu video. Untuk banyak video, gunakan subtitle pustaka atau transkripsi otomatis.")
     if supplied and Path(supplied.filename).suffix.lower() not in {".srt", ".vtt"}:
         raise ValueError("Subtitle harus berformat SRT atau VTT.")
+    if selected['subtitle_language'] == 'same' and not supplied:
+        missing = [source.name if source else upload.filename for source, upload, subtitle in sources if not subtitle]
+        if missing:
+            raise ValueError('Mode tanpa terjemahan memerlukan SRT/VTT. Subtitle belum ditemukan untuk: '
+                             + ', '.join(missing) + '. Unggah melalui Gunakan subtitle sendiri atau tambahkan subtitle yang cocok ke pustaka.')
     subtitle_bytes = supplied.read(5 * 1024 ** 2 + 1) if supplied else None
     if subtitle_bytes is not None:
         if len(subtitle_bytes) > 5 * 1024 ** 2:
@@ -586,7 +604,7 @@ def create():
             created.append(dict(id=job_id, title=title, source=str(source), subtitle=str(subtitle) if subtitle else None,
                                 directory=str(directory), segments=[], warnings=[], batch_id=batch_id,
                                 playlist_id=data.get("playlist_id", "default") if paths else None,
-                                auto_render=bool(batch_id), **selected))
+                                auto_render=bool(batch_id) or selected['subtitle_language'] == 'same', **selected))
     except Exception:
         for directory in directories:
             # Only remove fresh staging directories created by this request.

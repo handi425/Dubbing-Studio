@@ -199,6 +199,8 @@ def synthesize(text, voice, rate, provider, target):
 
 
 def prepare(job, update, check):
+    if job.get('subtitle_language') == 'same' and not job.get('subtitle'):
+        raise ValueError('Mode tanpa terjemahan memerlukan subtitle SRT/VTT. Tambahkan subtitle sebelum memulai dubbing.')
     if job["translator"] not in TRANSLATORS:
         raise ValueError("Penerjemah proyek ini sudah tidak tersedia. Buat proyek baru dengan Google atau Lokal.")
     directory = Path(job["directory"])

@@ -70,6 +70,21 @@ async function boot(t) {
   return {w, document, job, calls, errors, historyJobs};
 }
 
+test('same-language subtitles select direct dubbing without Whisper or translation controls', async t => {
+  const {w, document:d} = await boot(t);
+  const select = d.getElementById('subtitleLanguage');
+  select.value = 'same';
+  select.dispatchEvent(new w.Event('change'));
+  assert.equal(d.getElementById('model').disabled, true);
+  assert.equal(d.getElementById('translator').disabled, true);
+  assert.match(d.getElementById('start').textContent, /Langsung dubbing/);
+  select.value = 'auto';
+  select.dispatchEvent(new w.Event('change'));
+  assert.equal(d.getElementById('model').disabled, false);
+  assert.equal(d.getElementById('translator').disabled, false);
+  assert.match(d.getElementById('start').textContent, /Terjemahkan video/);
+});
+
 test('startup exposes voice and Whisper dropdowns, with supported translators', async t => {
   const {document:d} = await boot(t);
   assert.equal(d.getElementById('voice').options.length, 10);

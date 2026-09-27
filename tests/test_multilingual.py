@@ -43,6 +43,12 @@ class MultilingualTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Bahasa subtitle'):
             app.options({'tts':'edge', 'subtitle_language':'invalid'})
 
+    def test_direct_mode_never_falls_back_to_whisper_without_subtitles(self):
+        with patch.object(engine, 'probe') as probe:
+            with self.assertRaisesRegex(ValueError, 'memerlukan subtitle'):
+                engine.prepare({'subtitle_language':'same'}, lambda **v: None, lambda: None)
+            probe.assert_not_called()
+
     def test_auto_detection_reaches_translation_with_original_timing(self):
         with tempfile.TemporaryDirectory() as directory:
             factory = Mock()

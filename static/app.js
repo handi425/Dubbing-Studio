@@ -237,7 +237,16 @@ function updateSelection() {
   $('selectionCount').textContent = `${count} video dipilih`;
   $('batchHint').textContent = count > 1 ? 'Semua video diproses berurutan hingga selesai. Terjemahan bisa diedit setelah hasil tersedia.' : 'Pilih satu atau beberapa video. Untuk satu video, periksa terjemahan sebelum membuat hasil.';
   $('subtitleFile').disabled = count > 1;
+  updateSubtitleMode();
 }
+function updateSubtitleMode() {
+  const direct = $('subtitleLanguage').value === 'same';
+  $('model').disabled = direct;
+  $('translator').disabled = direct;
+  $('start').innerHTML = direct ? 'Langsung dubbing dari subtitle <span>→</span>' : 'Terjemahkan video <span>→</span>';
+  if (direct) $('batchHint').textContent = 'Langsung membuat dubbing dari SRT/VTT, tanpa Whisper dan tanpa terjemahan. Subtitle wajib tersedia untuk setiap video.';
+}
+$('subtitleLanguage').onchange = updateSelection;
 $('selectAll').onclick = () => { const query = $('search').value.toLowerCase(); library.filter(v => (v.name + v.folder).toLowerCase().includes(query)).forEach(v => selectedPaths.add(v.path)); renderLibrary(); };
 $('clearSelection').onclick = () => { selectedPaths.clear(); renderLibrary(); };
 document.querySelectorAll('[data-source]').forEach(button => button.onclick = () => switchSource(button.dataset.source));
@@ -285,7 +294,7 @@ async function startProjects(outputMode) {
   $('start').disabled = true; $('start').textContent = sourceMode === 'upload' ? 'Mengunggah video…' : 'Menyiapkan video…';
   try { const result = await api('jobs/batch', form); dirty = false; await openProject(result.jobs[0].id); }
   catch (error) { notice(error.message); }
-  finally { $('start').disabled = false; $('startAudio').disabled = false; $('start').innerHTML = 'Terjemahkan video <span>→</span>'; }
+  finally { $('start').disabled = false; $('startAudio').disabled = false; updateSubtitleMode(); }
 }
 $('start').onclick = () => startProjects('video');
 $('startAudio').onclick = () => startProjects('audio');

@@ -50,6 +50,6 @@ Bagian kosong dan kalimat panjang yang tidak berubah dicoba ulang secara terpisa
 
 ## Versi 1.1.2 - Dubbing tanpa terjemahan dan musik intro/outro
 
-Pilih **Bahasa subtitle SRT / VTT → Sama dengan bahasa dubbing — tanpa terjemahan** untuk langsung memakai teks subtitle sebagai dubbing, termasuk Indonesia ke Indonesia. Bahasa subtitle juga dapat dipilih secara eksplisit; jika sama dengan bahasa tujuan, penerjemah dilewati. Berlaku untuk subtitle manual dan pustaka, termasuk batch.
+Pilih **Bahasa subtitle SRT / VTT → Sama dengan bahasa dubbing — tanpa terjemahan** untuk langsung memakai teks subtitle sebagai dubbing, termasuk Indonesia ke Indonesia. Bahasa subtitle juga dapat dipilih secara eksplisit; jika sama dengan bahasa tujuan, penerjemah dilewati. Berlaku untuk subtitle manual dan pustaka, termasuk batch. Nama seperti video.id.srt dikenali jika hanya ada satu subtitle berakhiran bahasa yang cocok. Mode sama bahasa langsung membuat dubbing tanpa Whisper; jika subtitle belum tersedia, aplikasi meminta SRT/VTT.
 
 Audio asli di luar rentang ucapan dipertahankan pada hasil MP4 dan MP3, termasuk intro, outro, dan jeda. Pengaturan **Suara asli saat dubbing** berlaku selama rentang subtitle dan durasi suara dubbing. Ini bukan pemisahan musik/vokal; ucapan yang tidak tercatat dalam subtitle dapat tetap terdengar. Buat ulang hasil lama untuk menerapkan perubahan.

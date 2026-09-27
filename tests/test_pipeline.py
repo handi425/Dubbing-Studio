@@ -11,6 +11,15 @@ import engine
 
 
 class SubtitleTests(unittest.TestCase):
+    def test_language_tagged_sidecar_is_found_without_guessing_between_tracks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            video = Path(directory) / 'CHP 1 - 4. Deceleration _ Consolidation.mp4'
+            subtitle = video.with_suffix('.id.srt')
+            subtitle.write_text('subtitle', encoding='utf-8')
+            self.assertEqual(app.associated_subtitle(video), subtitle)
+            video.with_suffix('.en.srt').write_text('subtitle', encoding='utf-8')
+            self.assertIsNone(app.associated_subtitle(video))
+
     def test_vtt_settings_html_and_broken_sentence(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'input.vtt'
