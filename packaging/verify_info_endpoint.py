@@ -46,17 +46,13 @@ with tempfile.TemporaryDirectory(prefix='dubbing-info-') as temporary:
             with opener.open(f'http://127.0.0.1:{port}/api/history?page=1&page_size=10', timeout=5) as response:
                 history = json.load(response)
             assert history['items'] == [] and history['page'] == 1 and history['pages'] == 1
-            dummy_key = 'sk-or-v1-packaging-test-not-a-real-key'
-            request = urllib.request.Request(f'http://127.0.0.1:{port}/api/settings',
-                data=json.dumps({'openrouter_key':dummy_key,'openrouter_model':'openrouter/free'}).encode(),
-                headers={'Content-Type':'application/json','X-Dubbing-Studio':'1'})
-            with opener.open(request, timeout=5) as response:
-                assert json.load(response)['openrouter_configured']
-            with opener.open(f'http://127.0.0.1:{port}/api/settings', timeout=5) as response:
-                settings = json.load(response)
-            assert settings['openrouter_configured'] and 'openrouter_key' not in settings
-            assert dummy_key not in (data / 'settings.json').read_text(encoding='utf-8')
-            print('PASS: packaged History pagination and encrypted OpenRouter settings (dummy key).')
+            for removed in ('/api/settings', '/api/openrouter/models', '/api/google/settings'):
+                try:
+                    opener.open(f'http://127.0.0.1:{port}'+removed, timeout=5)
+                    raise AssertionError('Removed endpoint still available: '+removed)
+                except urllib.error.HTTPError as error:
+                    assert error.code == 404
+            print('PASS: packaged History pagination and removed translation API endpoints.')
             print('PASS: packaged /api/info HTTP 200; 30 languages; 10 Supertonic voices; isolated data.')
             if '--ui' in sys.argv:
                 ui_tests = Path(__file__).resolve().parents[1] / 'tests' / 'ui' / 'app.test.cjs'

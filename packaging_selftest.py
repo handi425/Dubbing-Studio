@@ -84,8 +84,8 @@ def run():
                     checks["microsoft_tts"] = True
                     english = root / "english.mp3"
                     engine.synthesize("Hello, welcome to this course.", "en-US-AriaNeural", 0, "edge", english)
-                    model = WhisperModel("tiny.en", device="cpu", compute_type="int8", cpu_threads=2)
-                    segments, _ = model.transcribe(str(english), language="en", vad_filter=True)
+                    model = WhisperModel("tiny", device="cpu", compute_type="int8", cpu_threads=2)
+                    segments, _ = model.transcribe(str(english), language=None, vad_filter=True)
                     transcript = " ".join(segment.text.strip() for segment in segments)
                     assert "hello" in transcript.lower() or "welcome" in transcript.lower(), transcript
                     checks["whisper_transcription"] = transcript

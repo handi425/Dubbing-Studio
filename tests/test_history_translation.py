@@ -1,13 +1,7 @@
-from pathlib import Path
-import tempfile
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
-import ai_settings
 import app
-import engine
-import openrouter_translate
-import supertonic_voice
 
 
 class HistoryTests(unittest.TestCase):
@@ -37,58 +31,25 @@ class HistoryTests(unittest.TestCase):
         for query in ('page=-1','page=abc','page_size=9999','page_size=0'):
             self.assertEqual(self.client.get('/api/history?'+query).status_code,400)
 
+    def test_sort_applies_to_all_pages_and_names_use_numeric_order(self):
+        with patch.object(app, 'jobs', self.jobs):
+            first = self.client.get('/api/history?sort=title&direction=asc').json
+            second = self.client.get('/api/history?sort=title&direction=asc&page=2').json
+            self.assertEqual([j['id'] for j in first['items']], [str(i) for i in range(10)])
+            self.assertEqual(second['items'][0]['id'], '10')
+            descending = self.client.get('/api/history?sort=title&direction=desc').json
+            self.assertEqual(descending['items'][0]['id'], '22')
+            self.assertEqual(self.client.get('/api/history?sort=unknown').status_code, 400)
+            self.assertEqual(self.client.get('/api/history?direction=unknown').status_code, 400)
 
-class OpenRouterTranslationTests(unittest.TestCase):
-    settings = {'openrouter_key':'sk-or-v1-dummy-test-key','openrouter_model':'example/model:free'}
-
-    def test_options_require_key_and_accept_openrouter_for_non_indonesian(self):
-        with patch.object(supertonic_voice, 'ready', return_value=True):
-            with patch.object(app, 'read_user_settings', return_value=self.settings):
-                options = app.options({'translator':'openrouter','language':'fr','tts':'supertonic'})
-                self.assertEqual(options['translator'],'openrouter')
-                self.assertNotIn('openrouter_key',options)
-            with patch.object(app, 'read_user_settings', return_value={'openrouter_key':''}):
-                with self.assertRaisesRegex(ValueError,'API key'):
-                    app.options({'translator':'openrouter','tts':'supertonic'})
-
-    def test_translator_calls_selected_model_and_returns_output(self):
-        response=Mock(status_code=200)
-        response.json.return_value={'choices':[{'finish_reason':'stop','message':{'content':'Bonjour.'}}]}
-        with patch.object(openrouter_translate,'read_user_settings',return_value=self.settings), \
-             patch.object(openrouter_translate.requests,'post',return_value=response) as remote:
-            result=engine.translate_text('Hello.','openrouter','fr')
-            self.assertEqual(result,'Bonjour.')
-            body=remote.call_args.kwargs['json']
-            self.assertEqual(body['model'],'example/model:free')
-            self.assertEqual(body['messages'][1]['content'],'Hello.')
-            self.assertIn('fr',body['messages'][0]['content'])
-            self.assertEqual(remote.call_args.args[0],'https://openrouter.ai/api/v1/chat/completions')
-
-    def test_limit_error_and_truncated_translation_are_not_accepted(self):
-        response=Mock(status_code=429)
-        with patch.object(openrouter_translate,'read_user_settings',return_value=self.settings), \
-             patch.object(openrouter_translate.requests,'post',return_value=response):
-            with self.assertRaisesRegex(ValueError,'Batas pemakaian'):
-                engine.translate_text('Hello.','openrouter','id')
-            response.status_code=200
-            response.json.return_value={'choices':[{'finish_reason':'length','message':{'content':'Partial'}}]}
-            with self.assertRaisesRegex(ValueError,'terpotong'):
-                engine.translate_text('Hello.','openrouter','id')
-
-    def test_translation_cache_is_separate_for_selected_models(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root=Path(temporary); subtitle=root/'source.srt'
-            subtitle.write_text('1\n00:00:00,000 --> 00:00:01,000\nHello.\n',encoding='utf-8')
-            job=dict(directory=temporary,source=str(root/'source.mp4'),subtitle=str(subtitle),translator='openrouter',language='fr')
-            config=dict(self.settings)
-            with patch.object(engine.shutil,'which',return_value='ffmpeg'), \
-                 patch.object(engine,'probe',return_value={'streams':[{'codec_type':'video'}]}), \
-                 patch.object(engine,'media_duration',return_value=2), \
-                 patch.object(ai_settings,'read_user_settings',return_value=config), \
-                 patch.object(engine,'translate_text',side_effect=['Bonjour.','Salut.']) as translate:
-                for _ in range(2): engine.prepare(job,lambda **kwargs: None,lambda: None)
-                self.assertEqual(translate.call_count,1)
-                config['openrouter_model']='example/other:free'
-                engine.prepare(job,lambda **kwargs: None,lambda: None)
-                self.assertEqual(translate.call_count,2)
-                self.assertIn('Salut.',(root/'subtitle.fr.srt').read_text(encoding='utf-8'))
+    def test_sort_status_language_format_duration_and_stable_ties(self):
+        values = {
+            'a':dict(id='a',title='Same',status='done',language='id',output_mode='video',duration=100),
+            'b':dict(id='b',title='Same',status='error',language='fr',output_mode='audio',duration=20),
+            'c':dict(id='c',title='Same',status='review',language='id',output_mode='video')}
+        with patch.object(app, 'jobs', values):
+            for field, expected in [('title',['a','b','c']),('status',['b','a','c']),
+                                    ('language',['a','c','b']),('format',['b','a','c']),('duration',['c','b','a'])]:
+                with self.subTest(field=field):
+                    result=self.client.get('/api/history?sort='+field+'&direction=asc').json
+                    self.assertEqual([j['id'] for j in result['items']],expected)

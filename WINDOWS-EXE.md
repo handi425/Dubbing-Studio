@@ -12,7 +12,7 @@ Python, FFmpeg, FFprobe, penerjemah Inggris–Indonesia, dan komponen transkrips
 
 Suara **Supertonic 3 · offline tanpa API** menjadi pilihan default. Pilih salah satu dari 10 preset **M1 to M5 / F1 to F5** dan bahasa dubbing pada dropdown di panel kanan. Model sekitar 380 MiB / 399 MB sudah dibundel; berjalan di CPU tanpa GPU, Python terpisah, PyTorch, akun, atau API key. Ukuran model bukan ukuran seluruh EXE maupun kebutuhan RAM. RAM model dilepas setelah satu batch selesai.
 
-Gunakan penerjemah **Lokal di komputer**. Bahasa Indonesia siap dipakai offline; penerjemah offline Argos untuk bahasa lain mengunduh modelnya sekali saat bahasa itu pertama digunakan. Tanpa subtitle, model Whisper diunduh pada pemakaian pertama; setelah tersedia, transkripsi juga lokal. Microsoft Edge/Azure tetap tersedia sebagai pilihan online.
+Pilihan bawaan adalah **Google web gratis tanpa API key**, dengan antrean berkelompok, cache, dan jeda permintaan. Layanan Google tetap dapat membatasi akses. Untuk sumber Inggris, tersedia juga penerjemah **Lokal di komputer**. Bahasa Indonesia siap dipakai offline; penerjemah offline Argos untuk bahasa lain mengunduh modelnya sekali saat bahasa itu pertama digunakan. Tanpa subtitle, model Whisper multibahasa (Base sebagai bawaan, bahasa sumber otomatis) diunduh pada pemakaian pertama; setelah tersedia, transkripsi juga lokal. Microsoft Edge/Azure tetap tersedia sebagai pilihan online.
 
 Model Supertonic 3 memakai lisensi **OpenRAIL-M**, termasuk pembatasan penggunaan dalam Attachment A. Penggunaan dan distribusi model tunduk pada ketentuan tersebut; salinan lengkap tersedia di **SUPERTONIC-MODEL-LICENSE.txt** yang disertakan bersama paket. Kode inferensi memakai MIT. Upstream telah diarsipkan; aplikasi memakai model arsip resmi dengan revisi tetap. Suara Wikidepia lama tetap menjadi pilihan opsional pada versi source dan tidak dibundel di EXE ini.
 
@@ -20,7 +20,7 @@ Model Supertonic 3 memakai lisensi **OpenRAIL-M**, termasuk pembatasan penggunaa
 
 Data disimpan di `%LOCALAPPDATA%\DubbingStudio\data`, terpisah dari EXE dan folder ekstraksi sementara. Masukkan lokasi itu pada address bar File Explorer. Hasil ada di `<id-proyek>\hasil.mp3` atau `hasil.mp4`. Log tersedia di `%LOCALAPPDATA%\DubbingStudio\logs`.
 
-Versi EXE memulai pustaka baru. Video pribadi, hasil lama, API key OpenRouter, dan key Azure tidak disertakan. API key OpenRouter dapat dimasukkan melalui menu **Pengaturan AI** dan dienkripsi dengan Windows DPAPI untuk profil lokal. Proyek source lama tetap berada di folder `data` aslinya. Daftarkan kembali folder kursus yang ingin dipakai. Untuk sengaja menggunakan data source lama pada komputer yang sama, atur `DUBBING_DATA` ke lokasi folder `data` tersebut dan tutup aplikasi source terlebih dahulu; jangan jalankan dua server pada penyimpanan yang sama.
+EXE memakai riwayat di folder data pengguna Windows. Video pribadi, hasil proyek, dan kunci API tidak dibundel. Proyek source tetap berada di folder `data` aslinya. Untuk memakai data source pada komputer yang sama, atur `DUBBING_DATA` ke folder tersebut dan tutup aplikasi source terlebih dahulu; jangan menjalankan dua server pada penyimpanan yang sama.
 
 Menyalin EXE saja tidak memindahkan riwayat maupun video. Cadangkan folder data secara terpisah; folder kursus yang didaftarkan juga harus tersedia pada lokasi yang tercatat.
 
@@ -37,3 +37,13 @@ Build: siapkan model menggunakan `setup_supertonic.py` (atau biarkan skrip build
 Pemeriksaan mandiri tanpa internet: `DubbingStudio.exe --self-test`. Laporan ditulis ke `%LOCALAPPDATA%\DubbingStudio\self-test.json`. Tambahkan `--online-test` untuk menguji suara Microsoft dan transkripsi Whisper menggunakan kalimat contoh. Ubah lokasi data melalui `DUBBING_DATA`, port awal melalui `DUBBING_PORT`, dan gunakan `--no-browser` untuk tidak membuka browser otomatis.
 
 Referensi build: https://pyinstaller.org/en/stable/runtime-information.html dan https://opennmt.net/CTranslate2/installation.html
+
+
+## Versi 1.1.0
+
+Whisper multibahasa dengan bahasa sumber otomatis; Google web mengikuti bahasa dubbing yang dipilih. Integrasi penerjemah OpenRouter, Microsoft Translator, dan Google Cloud API telah dihapus. Mesin suara Microsoft tetap tersedia. Klik judul kolom pada History/Playlist untuk mengurutkan nama, status, bahasa, format, atau durasi. Bagian terjemahan yang diedit dibuatkan suara baru; bagian lain memakai cache dan hasil digabungkan ulang.
+
+
+## Versi 1.1.1 - Pemulihan terjemahan
+
+Bagian kosong dan kalimat panjang yang tidak berubah dicoba ulang secara terpisah sampai tiga putaran. Hasil berhasil disimpan per potongan. Jika masih belum selesai, aplikasi menampilkan nomor segmen dan tidak memulai dubbing. Pemeriksaan ini tidak menjamin akurasi bahasa. HTTP 429 diberi jeda percobaan ulang 60 dan 120 detik; penolakan terus-menerus tetap dilaporkan. Transkripsi dapat dilanjutkan dari checkpoint jika sumber, subtitle, dan model tidak berubah.

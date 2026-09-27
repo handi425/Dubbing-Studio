@@ -152,7 +152,7 @@ function renderLibrary() {
     button.className = 'video-item' + (selectedPaths.has(video.path) ? ' selected' : '');
     button.title = video.name;
     button.setAttribute('aria-pressed', selectedPaths.has(video.path));
-    button.innerHTML = `<span class="video-symbol">▷</span><span class="video-text"><strong>${escapeHTML(video.name.replace(/^CHP\s+\d+\s+/i,''))}</strong><small>${video.size_mb} MB · ${video.subtitle ? 'Subtitle Inggris tersedia' : 'Transkripsi otomatis'}</small></span><span class="video-select"></span>`;
+    button.innerHTML = `<span class="video-symbol">▷</span><span class="video-text"><strong>${escapeHTML(video.name.replace(/^CHP\s+\d+\s+/i,''))}</strong><small>${video.size_mb} MB · ${video.subtitle ? 'Subtitle sumber tersedia' : 'Transkripsi otomatis'}</small></span><span class="video-select"></span>`;
     button.onclick = () => { if (selectedPaths.has(video.path)) selectedPaths.delete(video.path); else selectedPaths.add(video.path); renderLibrary(); };
     const row = document.createElement('div'); row.className = 'library-video-row'; row.append(button);
     const results = libraryResults[video.path] || [];
@@ -304,7 +304,6 @@ function showJob(job) {
   const editable = job.segments?.length > 0 && !busy;
   $('review').classList.toggle('hidden', !editable);
   if (editable && editorId !== job.id) {
-    grammarUndo=null; $('undoGrammar').classList.add('hidden');
     let voiceTools = $('reviewVoiceTools');
     if (!voiceTools) {
       voiceTools = document.createElement('div'); voiceTools.id = 'reviewVoiceTools'; voiceTools.className = 'review-voice-tools';
@@ -318,8 +317,7 @@ function showJob(job) {
     [...$('reviewTts').options].forEach(option=>{option.disabled=(job.language||'id')!=='id'&&option.value!=='supertonic';});
     reviewVoices(job.tts, job.voice);
     $('editorTargetLabel').textContent = `TERJEMAHAN ${String(job.language || 'id').toUpperCase()} | DAPAT DIEDIT`;
-    $('segments').innerHTML = job.segments.map((s,i) => `<div class="segment"><time>${timestamp(s.start)}<br>${timestamp(s.end)}</time><p>${escapeHTML(s.en)}</p><div class="segment-output"><textarea aria-label="Terjemahan bagian ${i+1}" data-index="${i}">${escapeHTML(s.id)}</textarea><button class="text-button improve-text" data-index="${i}">Grammar AI</button></div></div>`).join('');
-    $('segments').querySelectorAll('.improve-text').forEach(button=>button.onclick=async()=>{const area=$('segments').querySelector(`textarea[data-index="${button.dataset.index}"]`);button.disabled=true;button.textContent='Memproses';try{const result=await api(`jobs/${job.id}/improve/${button.dataset.index}`,{text:area.value});area.value=result.text;dirty=true;$('save').textContent='Simpan perubahan';}catch(error){notice(error.message);}finally{button.disabled=false;button.textContent='Grammar AI';}});
+    $('segments').innerHTML = job.segments.map((s,i) => `<div class="segment"><time>${timestamp(s.start)}<br>${timestamp(s.end)}</time><p>${escapeHTML(s.en)}</p><div class="segment-output"><textarea aria-label="Terjemahan bagian ${i+1}" data-index="${i}">${escapeHTML(s.id)}</textarea></div></div>`).join('');
     $('segments').querySelectorAll('textarea').forEach(area => area.oninput = () => { dirty = true; $('save').textContent = 'Simpan perubahan'; });
     $('segmentCount').textContent = `${job.segments.length} bagian · ${timestamp(job.duration)} durasi video`;
     editorId = job.id;
@@ -332,13 +330,13 @@ function showJob(job) {
     $('player').classList.toggle('hidden', audioOnly); $('audioPlayer').classList.toggle('hidden', !audioOnly);
     if (player.dataset.job !== job.id) {
       player.src = base + filename;
-      if (!audioOnly) player.innerHTML = `<track kind="subtitles" src="${base}subtitle.${job.language || 'id'}.vtt" srclang="${job.language || 'id'}" label="${escapeHTML(job.language_name || job.language || 'Indonesia')}" default><track kind="subtitles" src="${base}subtitle.en.vtt" srclang="en" label="English">`;
+      if (!audioOnly) player.innerHTML = `<track kind="subtitles" src="${base}subtitle.${job.language || 'id'}.vtt" srclang="${job.language || 'id'}" label="${escapeHTML(job.language_name || job.language || 'Indonesia')}" default><track kind="subtitles" src="${base}subtitle.${job.source_language ? 'source' : 'en'}.vtt" label="Bahasa sumber">`;
       player.dataset.job = job.id;
     }
     $('downloadVideo').href = base + filename + '?download=1';
     $('downloadVideo').textContent = audioOnly ? 'Unduh audio MP3 ↓' : 'Unduh video ↓';
-    $('resultNote').textContent = audioOnly ? `Audio sulih suara ${job.language_name || 'Indonesia'} dalam format MP3, dengan durasi mengikuti video sumber.` : 'Subtitle dapat dinyalakan melalui tombol CC. Audio Inggris asli juga tersedia sebagai track kedua pada pemutar yang mendukungnya.';
-    $('downloads').innerHTML = [[`subtitle.${job.language || 'id'}.srt`,`Subtitle ${job.language_name || 'Indonesia'}`],['subtitle.en.srt','Subtitle Inggris'],['transkrip.txt','Transkrip']].map(([name,label]) => `<a href="${base}${name}?download=1" download>${label} ↓</a>`).join('');
+    $('resultNote').textContent = audioOnly ? `Audio sulih suara ${job.language_name || 'Indonesia'} dalam format MP3, dengan durasi mengikuti video sumber.` : 'Subtitle dapat dinyalakan melalui tombol CC. Audio asli juga tersedia sebagai track kedua pada pemutar yang mendukungnya.';
+    $('downloads').innerHTML = [[`subtitle.${job.language || 'id'}.srt`,`Subtitle ${job.language_name || 'Indonesia'}`],[job.source_language ? 'subtitle.source.srt' : 'subtitle.en.srt','Subtitle sumber'],['transkrip.txt','Transkrip']].map(([name,label]) => `<a href="${base}${name}?download=1" download>${label} ↓</a>`).join('');
   }
   const warnings = job.warnings || []; $('warnings').classList.toggle('hidden', !warnings.length); $('warnings').textContent = warnings.join('\n');
 }
@@ -369,24 +367,49 @@ function showWorkspaceView(view) {
   $('showPlaylists').classList.toggle('active', view === 'playlistPage');
   document.querySelector('.breadcrumb strong').textContent = view === 'historyPage' ? 'History' : view === 'playlistPage' ? 'Playlist video' : 'Studio video';
 }
-function showSavedKey(configured) {
-  const input=$('openrouterKey');
-  input.readOnly=Boolean(configured);
-  input.value=configured?'***************':'';
-  input.placeholder=configured?'API key tersimpan':'Masukkan API key OpenRouter';
-  $('changeOpenrouterKey').classList.toggle('hidden',!configured);
-  $('openrouterKeyStatus').textContent=configured?'API key sudah tersimpan. Tanda bintang mewakili key Anda. Gunakan Ganti API key untuk menggantinya.':'Belum ada API key tersimpan.';
-}
-$('changeOpenrouterKey').onclick=()=>{ $('openrouterKey').readOnly=false; $('openrouterKey').value=''; $('openrouterKey').focus(); $('openrouterKeyStatus').textContent='Masukkan key baru, lalu Simpan. Kolom kosong tetap memakai key lama.'; };
 async function showHistoryPage() {
   await leaveEdits(); clearTimeout(timer); activeId=null;
   $('player').pause(); $('audioPlayer').pause();
   showWorkspaceView('historyPage'); notice('');
   await renderHistoryPage();
 }
+
+const tableCollator = new Intl.Collator('id', {numeric:true, sensitivity:'base'});
+function readSort(name, fallback) {
+  try { const saved=JSON.parse(localStorage.getItem(name)); if(saved && ['order','title','status','language','format','duration'].includes(saved.key) && ['asc','desc'].includes(saved.direction))return saved; } catch (_) {}
+  return fallback;
+}
+let historySort=readSort('history-sort',{key:'order',direction:'desc'});
+let watchSort=readSort('watch-sort',{key:'order',direction:'asc'});
+function rememberSort(name,state){try{localStorage.setItem(name,JSON.stringify(state));}catch(_){}}
+function sortHeader(th,label,key,state,change){
+  const active=state.key===key;
+  th.setAttribute('aria-sort',active?(state.direction==='asc'?'ascending':'descending'):'none');
+  const button=document.createElement('button');button.className='sort-button';
+  button.textContent=label+(active?(state.direction==='asc'?' ↑':' ↓'):' ↕');
+  button.title='Urutkan berdasarkan '+label;
+  button.onclick=async()=>{const direction=active&&state.direction==='asc'?'desc':'asc';try{await change({key,direction});}catch(error){notice(error.message);}};
+  th.replaceChildren(button);
+}
+function bindHistorySort(){
+  const labels={title:'Nama proyek',status:'Status',language:'Bahasa',format:'Format',duration:'Durasi'};
+  document.querySelectorAll('[data-history-sort]').forEach(th=>sortHeader(th,labels[th.dataset.historySort],th.dataset.historySort,historySort,async state=>{
+    historySort=state;rememberSort('history-sort',state);historyPageNumber=1;await renderHistoryPage();
+  }));
+}
+function sortedWatchItems(items){
+  const value=job=>watchSort.key==='language'?(job.language_name||'Indonesia'):watchSort.key==='format'?(job.output_mode==='audio'?'MP3':'MP4'):watchSort.key==='status'?watchStatus(job):watchSort.key==='duration'?(Number(job.duration)||0):(job.title||'');
+  return items.map((job,index)=>({job,index})).sort((a,b)=>{
+    const result=watchSort.key==='order'?a.index-b.index:watchSort.key==='duration'?value(a.job)-value(b.job):tableCollator.compare(value(a.job),value(b.job));
+    return (watchSort.direction==='asc'?result:-result)||a.index-b.index;
+  }).map(item=>item.job);
+}
+function watchStatus(job){return canPlay(job)?'Siap diputar':job.media?'Video sumber tidak tersedia':jobStatusLabels[job.status]||'Tidak tersedia';}
+
 async function renderHistoryPage() {
+  bindHistorySort();
   const requestId=++historyLoad;
-  const result=await api(`history?page=${historyPageNumber}&page_size=${$('historyPageSize').value}`);
+  const result=await api(`history?page=${historyPageNumber}&page_size=${$('historyPageSize').value}&sort=${historySort.key}&direction=${historySort.direction}`);
   if(requestId!==historyLoad)return;
   historyPageNumber=result.page;
   $('historyTotal').textContent=`${result.total} proyek tersimpan`;
@@ -394,7 +417,7 @@ async function renderHistoryPage() {
   $('historyPrev').disabled=result.page<=1; $('historyNext').disabled=result.page>=result.pages;
   historyVisible=result.items;
   $('history').replaceChildren();
-  if(!result.items.length){const row=$('history').insertRow();const cell=row.insertCell();cell.colSpan=6;cell.textContent='Belum ada proyek.';}
+  if(!result.items.length){const row=$('history').insertRow();const cell=row.insertCell();cell.colSpan=7;cell.textContent='Belum ada proyek.';}
   for(const job of result.items){
     if(historySelected.has(job.id))historySelected.set(job.id,job);
     const row=$('history').insertRow();row.className='history-entry';
@@ -403,7 +426,7 @@ async function renderHistoryPage() {
     check.onchange=()=>{if(check.checked)historySelected.set(job.id,job);else historySelected.delete(job.id);updateHistorySelection();};row.insertCell().append(check);
     row.insertCell().textContent=job.title;
     row.insertCell().textContent=jobStatusLabels[job.status]||job.status;
-    row.insertCell().textContent=job.language_name||'Indonesia';row.insertCell().textContent=job.output_mode==='audio'?'MP3':'MP4';
+    row.insertCell().textContent=job.language_name||'Indonesia';row.insertCell().textContent=job.output_mode==='audio'?'MP3':'MP4';row.insertCell().textContent=job.duration==null?'-':timestamp(job.duration);
     const actions=row.insertCell();actions.className='table-actions';
     actions.append(actionButton('Play',()=>playHistory(job),!canPlay(job)));
     const open=actionButton('Buka / Edit',()=>openProject(job.id));open.classList.add('history-open');actions.append(open);
@@ -440,26 +463,40 @@ async function showPlaylistPage(){
   showWorkspaceView('playlistPage');notice('');await refreshWatchlists();
 }
 async function refreshWatchlists(){
-  watchLists=await api('watch-playlists');$('watchPlaylists').replaceChildren();
+  watchLists=await api('watch-playlists');renderWatchLists();
+}
+function renderWatchLists(){
+  $('watchPlaylists').replaceChildren();
   if(!watchLists.some(item=>item.id===watchId))watchId=watchLists[0]?.id||null;
   if(!watchLists.length)$('watchPlaylists').textContent='Belum ada playlist. Pilih hasil selesai di History, lalu Tambahkan ke playlist.';
-  for(const item of watchLists){const button=actionButton(`${item.name} (${item.items.length})`,()=>{watchId=item.id;renderWatchDetails();});button.setAttribute('aria-pressed',item.id===watchId);$('watchPlaylists').append(button);}
+  const mode=$('watchListSort').value;
+  const ordered=[...watchLists];
+  if(mode.startsWith('name'))ordered.sort((a,b)=>tableCollator.compare(a.name,b.name)*(mode.endsWith('desc')?-1:1));
+  if(mode.startsWith('count'))ordered.sort((a,b)=>(a.items.length-b.items.length)*(mode.endsWith('desc')?-1:1));
+  for(const item of ordered){const button=actionButton(`${item.name} (${item.items.length})`,()=>{watchId=item.id;renderWatchDetails();});button.dataset.playlist=item.id;button.setAttribute('aria-pressed',item.id===watchId);$('watchPlaylists').append(button);}
   renderWatchDetails();
 }
 function renderWatchDetails(){
   $('watchDetails').replaceChildren();const list=watchLists.find(item=>item.id===watchId);if(!list)return;
-  for(const [i,button] of [...$('watchPlaylists').children].entries())button.setAttribute('aria-pressed',watchLists[i]?.id===watchId);
+  for(const button of $('watchPlaylists').querySelectorAll('button'))button.setAttribute('aria-pressed',button.dataset.playlist===watchId);
+  const items=sortedWatchItems(list.items);
   const title=document.createElement('h3');title.textContent=list.name;$('watchDetails').append(title);
   const actions=document.createElement('div');actions.className='selection-actions';
-  actions.append(actionButton('Play semua',()=>startWatch(list.items),!list.items.some(canPlay)),actionButton('Ganti nama',async()=>{const name=prompt('Nama playlist',list.name);if(name===null)return;await api(`watch-playlists/${list.id}`,{name});await refreshWatchlists();}),actionButton('Hapus playlist',async()=>{if(!confirm(`Hapus playlist "${list.name}"? Proyek dan hasil di History tetap disimpan.`))return;await api(`watch-playlists/${list.id}`,{method:'DELETE'});await refreshWatchlists();}));
+  actions.append(actionButton('Play semua',()=>startWatch(items),!list.items.some(canPlay)),actionButton('Ganti nama',async()=>{const name=prompt('Nama playlist',list.name);if(name===null)return;await api(`watch-playlists/${list.id}`,{name});await refreshWatchlists();}),actionButton('Hapus playlist',async()=>{if(!confirm(`Hapus playlist "${list.name}"? Proyek dan hasil di History tetap disimpan.`))return;await api(`watch-playlists/${list.id}`,{method:'DELETE'});await refreshWatchlists();}));
   const downloads=list.items.filter(job=>job.media);
   if(downloads.length){const download=document.createElement('a');download.className='secondary';download.textContent=`Unduh semua (${downloads.length} hasil, ZIP)`;download.href=`/api/watch-playlists/${list.id}/download`;download.setAttribute('download','');actions.append(download);}
   const downloadNote=document.createElement('p');downloadNote.className='muted';downloadNote.textContent='Unduh semua membuat satu ZIP berisi hasil MP4/MP3 yang tersedia. Hasil yang belum selesai atau telah dihapus dilewati.';
   $('watchDetails').append(actions,downloadNote);
   const wrap=document.createElement('div');wrap.className='table-scroll';const table=document.createElement('table');table.className='data-table';
-  table.innerHTML='<thead><tr><th>No.</th><th>Proyek</th><th>Status</th><th>Tindakan</th></tr></thead><tbody></tbody>';
+  table.innerHTML='<thead><tr></tr></thead><tbody></tbody>';
+  const heading=table.querySelector('thead tr');
+  for(const [key,label] of [['order','No.'],['title','Nama proyek'],['status','Status'],['language','Bahasa'],['format','Format'],['duration','Durasi']]){
+    const th=document.createElement('th');th.dataset.watchSort=key;heading.append(th);
+    sortHeader(th,label,key,watchSort,state=>{watchSort=state;rememberSort('watch-sort',state);renderWatchDetails();});
+  }
+  const actionHeading=document.createElement('th');actionHeading.textContent='Tindakan';heading.append(actionHeading);
   const body=table.querySelector('tbody');
-  list.items.forEach((job,index)=>{const row=body.insertRow();row.insertCell().textContent=index+1;row.insertCell().textContent=job.title;row.insertCell().textContent=canPlay(job)?'Siap diputar':job.media?'Video sumber tidak tersedia':jobStatusLabels[job.status]||'Tidak tersedia';const cell=row.insertCell();cell.className='table-actions';cell.append(actionButton('Play',()=>startWatch(list.items,job.id),!canPlay(job)),actionButton('Buka / Edit',()=>openProject(job.id),job.status==='missing'),actionButton('Keluarkan',async()=>{await api(`watch-playlists/${list.id}`,{remove_ids:[job.id]});await refreshWatchlists();}));if(job.media){const link=document.createElement('a');link.className='secondary';link.textContent='Unduh';link.href=job.media.download_url;link.setAttribute('download','');cell.append(link);}});
+  items.forEach((job,index)=>{const row=body.insertRow();row.insertCell().textContent=list.items.indexOf(job)+1;row.insertCell().textContent=job.title;row.insertCell().textContent=watchStatus(job);row.insertCell().textContent=job.language_name||'-';row.insertCell().textContent=job.output_mode==='audio'?'MP3':'MP4';row.insertCell().textContent=job.duration==null?'-':timestamp(job.duration);const cell=row.insertCell();cell.className='table-actions';cell.append(actionButton('Play',()=>startWatch(items,job.id),!canPlay(job)),actionButton('Buka / Edit',()=>openProject(job.id),job.status==='missing'),actionButton('Keluarkan',async()=>{await api(`watch-playlists/${list.id}`,{remove_ids:[job.id]});await refreshWatchlists();}));if(job.media){const link=document.createElement('a');link.className='secondary';link.textContent='Unduh';link.href=job.media.download_url;link.setAttribute('download','');cell.append(link);}});
   wrap.append(table);$('watchDetails').append(wrap);
 }
 function startWatch(items,id){watchQueue=items.filter(canPlay);watchIndex=Math.max(0,watchQueue.findIndex(job=>job.id===id));playWatch();}
@@ -482,21 +519,6 @@ $('historyPrev').onclick=async()=>{historyPageNumber=Math.max(1,historyPageNumbe
 $('historyNext').onclick=async()=>{historyPageNumber++;try{await renderHistoryPage();}catch(error){notice(error.message);}};
 $('historyPageSize').onchange=async()=>{historyPageNumber=1;try{await renderHistoryPage();}catch(error){notice(error.message);}};
 
-async function openAiSettings() {
-  const dialog=$('settingsDialog'); $('settingsStatus').textContent='Memuat pilihan model gratis?';
-  try {
-    const [settings, models]=await Promise.all([api('settings'),api('openrouter/models')]);
-    $('openrouterModel').innerHTML=models.map(model=>`<option value="${escapeHTML(model.id)}">${escapeHTML(model.name)}</option>`).join('');
-    if (!models.some(model=>model.id===settings.openrouter_model)) $('openrouterModel').insertAdjacentHTML('beforeend',`<option value="${escapeHTML(settings.openrouter_model)}">${escapeHTML(settings.openrouter_model)}</option>`);
-    $('openrouterModel').value=settings.openrouter_model;
-    showSavedKey(settings.openrouter_configured);
-    $('settingsStatus').textContent='Pilih router otomatis atau model gratis yang tersedia.';
-    dialog.showModal();
-  } catch(error) {$('settingsStatus').textContent=error.message;dialog.showModal();}
-}
-$('openSettings').onclick=openAiSettings;
-$('openRouterSettings').onclick=openAiSettings;
-$('saveAiSettings').onclick=async()=>{const button=$('saveAiSettings');button.disabled=true;try{const result=await api('settings',{openrouter_key:$('openrouterKey').readOnly?'':$('openrouterKey').value,openrouter_model:$('openrouterModel').value});showSavedKey(result.openrouter_configured);$('settingsStatus').textContent='Pengaturan tersimpan di komputer ini.';}catch(error){$('settingsStatus').textContent=error.message;}finally{button.disabled=false;}};
 $('showHistory').onclick=()=>showHistoryPage().catch(error=>notice(error.message));
 $('showPlaylists').onclick=()=>showPlaylistPage().catch(error=>notice(error.message));
 $('back').onclick = newProject; $('newProject').onclick = newProject;
@@ -528,92 +550,24 @@ $('render').onclick = async () => {
 $('retry').onclick = async () => { try { if(dirty) await saveTexts(); await api(`jobs/${activeId}/retry`, {}); clearTimeout(timer); await poll(); } catch(e) { notice(e.message); } };
 $('cancel').onclick = async () => { try { await api(`jobs/${activeId}/cancel`, {}); } catch(e) { notice(e.message); } };
 window.addEventListener('beforeunload', e => { if (dirty || importing) { e.preventDefault(); e.returnValue = ''; } });
-let grammarRun=null, grammarUndo=null;
-const grammarAreas=()=>[...$('segments').querySelectorAll('textarea')];
-function cancelGrammar() {
-  if(grammarRun) grammarRun.controller.abort();
-  grammarRun=null; $('grammarAll').disabled=false; $('applyGrammar').disabled=true;
-}
-$('cancelGrammar').onclick=()=>{cancelGrammar();$('grammarDialog').close();};
-$('grammarDialog').addEventListener('cancel',cancelGrammar);
-$('grammarDialog').addEventListener('close',cancelGrammar);
-$('grammarAll').onclick=async()=>{
-  const originals=grammarAreas().map(area=>area.value);
-  if(!activeId || !originals.length) return;
-  if(originals.some(text=>!text.trim() || text.length>4000)){notice('Isi setiap bagian dengan 1 sampai 4000 karakter.');return;}
-  cancelGrammar();
-  const run={jobId:activeId, originals, results:[], controller:new AbortController()};
-  grammarRun=run; $('grammarAll').disabled=true; $('grammarPreview').replaceChildren();
-  $('grammarStatus').textContent='Memproses grammar seluruh bagian...';
-  $('grammarProgress').max=originals.length; $('grammarProgress').value=0;
-  $('grammarDialog').showModal();
-  try {
-    let offset=0;
-    while(offset<originals.length){
-      const items=[]; let size=0;
-      while(offset<originals.length && items.length<8 && size+originals[offset].length<=8000){
-        items.push({index:offset,text:originals[offset]}); size+=originals[offset].length; offset++;
-      }
-      const result=await api(`jobs/${run.jobId}/grammar`,{items},run.controller.signal);
-      if(grammarRun!==run)return;
-      if(!Array.isArray(result.items) || result.items.length!==items.length || result.items.some((item,i)=>item.index!==items[i].index || typeof item.text!=='string' || !item.text.trim())) throw new Error('Jawaban AI tidak valid. Teks asli tetap utuh.');
-      run.results.push(...result.items);
-      $('grammarProgress').value=offset;
-      $('grammarStatus').textContent=`Memeriksa ${offset}/${originals.length} bagian...`;
-    }
-    let changes=0, warnings=0;
-    for(const item of run.results){
-      const before=originals[item.index];
-      if(before===item.text && !item.warning)continue;
-      if(before!==item.text)changes++;
-      if(item.warning)warnings++;
-      const row=document.createElement('section'); row.className='grammar-change';
-      const title=document.createElement('strong');title.textContent=`Bagian ${item.index+1}`;
-      const oldText=document.createElement('p');oldText.textContent=`Sebelum: ${before}`;
-      const newText=document.createElement('p');newText.textContent=`Usulan: ${item.text}`;
-      row.append(title,oldText,newText);
-      if(item.warning){const warning=document.createElement('p');warning.className='muted';warning.textContent=item.warning;row.append(warning);}
-      $('grammarPreview').append(row);
-    }
-    $('grammarStatus').textContent=`Selesai: ${changes} bagian diusulkan berubah, ${warnings} usulan ditolak otomatis. Tinjau sebelum menerapkan. Teks belum disimpan.`;
-    $('applyGrammar').disabled=changes===0;
-  } catch(error){
-    if(grammarRun!==run)return;
-    $('grammarStatus').textContent=`${error.message} Tidak ada perubahan yang diterapkan.`;
-    $('applyGrammar').disabled=true;
-  }
-};
-$('applyGrammar').onclick=()=>{
-  const run=grammarRun, areas=grammarAreas();
-  if(!run || run.results.length!==run.originals.length)return;
-  if(activeId!==run.jobId || areas.length!==run.originals.length || areas.some((area,i)=>area.value!==run.originals[i])){
-    $('grammarStatus').textContent='Editor berubah selama pemrosesan. Batalkan dan jalankan ulang agar edit Anda tetap utuh.'; $('applyGrammar').disabled=true;return;
-  }
-  const after=run.results.map(item=>item.text);
-  grammarUndo={jobId:run.jobId,before:run.originals,after};
-  areas.forEach((area,i)=>{area.value=after[i];});
-  dirty=true; $('save').textContent='Simpan perubahan'; $('undoGrammar').classList.remove('hidden');
-  cancelGrammar(); $('grammarDialog').close();
-};
-$('undoGrammar').onclick=()=>{
-  const undo=grammarUndo, areas=grammarAreas();
-  if(!undo || activeId!==undo.jobId || areas.length!==undo.after.length || areas.some((area,i)=>area.value!==undo.after[i])){notice('Teks sudah diedit lagi. Urungkan grammar tidak diterapkan agar edit terbaru tetap utuh.');return;}
-  areas.forEach((area,i)=>{area.value=undo.before[i];});
-  dirty=true; $('save').textContent='Simpan perubahan';grammarUndo=null;$('undoGrammar').classList.add('hidden');
-};
 (async () => {
   try { const [, info] = await Promise.all([refreshPlaylists(),api('info')]);
     let previous; try { previous = localStorage.getItem('dubbing-playlist'); } catch (_) {}
     await loadCourse(playlists.find(c => c.id === previous && c.status === 'ready')?.id || 'default'); await refreshHistory();
     if (!info.ffmpeg) notice('FFmpeg belum tersedia. Pasang FFmpeg dan tambahkan folder bin ke PATH sebelum memproses video.');
-    $('tts').querySelector('[value=azure]').disabled = !info.azure_speech; $('translator').querySelector('[value=azure]').disabled = !info.azure_translator;
+    $('tts').querySelector('[value=azure]').disabled = !info.azure_speech;
     $('tts').querySelector('[value=wikidepia]').disabled = !info.wikidepia;
     $('tts').querySelector('[value=onnx]').disabled = !info.onnx;
     $('tts').querySelector('[value=supertonic]').disabled = !info.supertonic;
     $('tts').value = info.default_tts || 'edge';
     $('language').innerHTML = Object.entries(info.languages).map(([code,name]) => `<option value="${code}">${name}</option>`).join('');
     $('language').value = info.default_language || 'id';
-    $('language').onchange = () => { const name=$('language').selectedOptions[0]?.textContent || 'ID'; document.querySelector('header .badge').innerHTML=`EN <span>→</span> ${escapeHTML($('language').value.toUpperCase())}`; };
+    $('language').onchange = () => { const name=$('language').selectedOptions[0]?.textContent || 'ID'; document.querySelector('header .badge').innerHTML=`AUTO <span>→</span> ${escapeHTML($('language').value.toUpperCase())}`; };
     $('tts').onchange();
   } catch(e) { notice(e.message); }
 })();
+
+
+
+$('historyResetSort').onclick=async()=>{historySort={key:'order',direction:'desc'};rememberSort('history-sort',historySort);historyPageNumber=1;try{await renderHistoryPage();}catch(error){notice(error.message);}};
+$('watchListSort').onchange=renderWatchLists;

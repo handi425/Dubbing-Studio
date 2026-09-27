@@ -2,13 +2,13 @@
 
 [Unduh EXE Windows terbaru](https://github.com/handi425/Dubbing-Studio/releases/latest)
 
-History kini berupa tabel dengan pilihan lintas halaman, Play, Unduh, dan hapus massal. Buat playlist hasil dari History untuk ditonton di halaman Playlist video; tersedia Play semua berurutan dan Unduh semua dalam satu ZIP. Perbaikan grammar AI dapat dijalankan sekaligus dengan pratinjau dan urungkan.
+Versi 1.1.1: Whisper multibahasa, Google web gratis dengan pemulihan bagian tertinggal, serta pengurutan tabel History dan Playlist.
 
 Versi Windows `.exe`: lihat [WINDOWS-EXE.md](WINDOWS-EXE.md). File distribusi
 `dist/DubbingStudio.exe` membundel Python, FFmpeg, dan penerjemah lokal untuk
 Windows 10/11 x64. Build ulang melalui `packaging/build_windows.ps1`.
 
-Aplikasi lokal Windows untuk menerjemahkan video Inggris dan membuat sulih suara AI dengan 10 preset Supertonic 3 dan 30 pilihan bahasa. Sintesis suara dan terjemahan lokal berjalan di CPU tanpa API; model bahasa tambahan diunduh saat pertama kali dipilih.
+Aplikasi lokal Windows untuk menerjemahkan video berbagai bahasa dan membuat sulih suara AI dengan 10 preset Supertonic 3 dan 30 pilihan bahasa. Sintesis suara dan terjemahan lokal berjalan di CPU tanpa API; model bahasa tambahan diunduh saat pertama kali dipilih.
 
 ## Video demo
 
@@ -25,7 +25,7 @@ Klik dua kali **MULAI DUBBING.bat** pada folder aplikasi. Aplikasi terbuka di ht
 1. Pilih satu atau beberapa video dari pustaka kursus, atau unggah beberapa video sekaligus (total unggahan kurang dari 8 GB). Pilihan **Pilih semua hasil** mengikuti pencarian; **Hapus pilihan** mengosongkan pilihan pustaka.
 2. Pilih model suara, bahasa dubbing, kecepatan, dan volume suara asli dari dropdown.
 3. Klik **Terjemahkan video** untuk hasil MP4, atau **Hanya Audio** di bawahnya untuk sulih suara Indonesia dalam MP3 sesuai bahasa dubbing yang dipilih. Subtitle `.vtt`/`.srt` yang cocok dipakai otomatis, termasuk penamaan `CHP 1 ...` pada kursus ini. Subtitle Inggris manual tersedia untuk pilihan satu video.
-4. Tanpa subtitle, Whisper mentranskripsi bahasa Inggris di CPU lokal. Model diunduh pada pemakaian pertama; proses dapat lambat pada video panjang.
+4. Tanpa subtitle, Whisper multibahasa mendeteksi bahasa otomatis dan mentranskripsi ucapan di CPU lokal. Model diunduh pada pemakaian pertama; proses dapat lambat pada video panjang.
 5. Untuk satu video, periksa dan edit terjemahan, lalu klik **Buat video dubbing** atau **Buat audio dubbing**. Untuk beberapa video, setiap video diterjemahkan dan dibuat sulih suaranya secara otomatis, berurutan sampai selesai.
 6. Pantau status setiap video pada **Antrean video**. Putar atau unduh hasil MP4/MP3 masing-masing, subtitle sesuai bahasa keluaran dan Inggris, serta transkrip. Klik proyek untuk mengedit terjemahan, membuat ulang hasil, membatalkan, atau mencoba kembali; kegagalan satu video tidak menghentikan video berikutnya.
 
@@ -54,8 +54,9 @@ Impor folder hanya membangun pustaka. Pilih video lalu klik **Terjemahkan video*
 
 - Suara default memakai **Supertonic 3**, berjalan lokal di CPU melalui ONNX. Urutan pilihan awal pada instalasi source adalah Supertonic, Wikidepia ONNX, lalu Microsoft Edge sesuai ketersediaan model. Mesin selalu ditampilkan pada Pengaturan layanan; pilihan lokal yang gagal tidak otomatis dialihkan ke layanan online.
 - Microsoft Edge tetap tersedia melalui [edge-tts](https://github.com/rany2/edge-tts), pustaka pihak ketiga, tanpa API key tetapi membutuhkan internet. Ini bukan SDK Azure resmi dan ketersediaannya dapat berubah.
-- Terjemahan default memakai model Inggris–Indonesia [Argos](https://github.com/argosopentech/argospm-index) melalui CTranslate2 di komputer. Model sekitar 65 MB diunduh sekali, kemudian dapat dipakai offline.
-- Google web dan Microsoft Translator tersedia sebagai pilihan penerjemah online. Google web bukan Cloud Translation API resmi; layanan ini menolak permintaan saat pengujian, sehingga bukan pilihan utama.
+- Pilihan terjemahan lokal memakai model Inggris–Indonesia [Argos](https://github.com/argosopentech/argospm-index) melalui CTranslate2 di komputer. Model sekitar 65 MB diunduh sekali, kemudian dapat dipakai offline.
+- Pilihan Google web menunggu seluruh transkrip selesai lalu menerjemahkan dalam kelompok (maks. 3.500 karakter termasuk penanda, juga dibatasi ukuran URL). Penanda awal/akhir setiap potongan diperiksa sebelum hasil dipasangkan kembali ke timestamp asli; respons yang tidak lengkap tidak diterapkan. Segmen panjang dapat dibagi dan digabung kembali. Hasil kelompok dan segmen disimpan dalam cache sehingga bagian yang sudah berhasil tidak perlu dikirim ulang. Jeda antarpermintaan dan percobaan ulang bertahap mengurangi rentetan permintaan, tetapi tidak menghilangkan pembatasan Google. Transkrip sumber lengkap disimpan di `transkrip.en.json` sebelum penerjemahan. Saat mencoba ulang proyek tanpa subtitle, Whisper masih dijalankan kembali; cache menghindari pengiriman ulang teks yang sama.
+- Google web gratis tanpa API key adalah pilihan bawaan. Menu pengaturan dan pilihan Google Cloud API telah dihapus dari antarmuka.
 - Video tetap di komputer. Dengan penerjemah dan suara lokal, teks tetap lokal. **Untuk suara Microsoft, teks Indonesia dikirim ke Microsoft.** Bila memilih penerjemah online, teks Inggris juga dikirim ke layanan itu. Antarmuka memakai font sistem tanpa unduhan font.
 - Transkripsi menggunakan [faster-whisper](https://github.com/SYSTRAN/faster-whisper) secara lokal setelah model tersedia.
 - Tidak ada jaminan ketepatan terjemahan istilah teknis. Editor membantu memeriksa hasil sebelum dibuat suara.
@@ -67,20 +68,18 @@ Atur environment berikut melalui Windows Environment Variables atau PowerShell s
 ```powershell
 $env:AZURE_SPEECH_KEY = 'key-Anda'
 $env:AZURE_SPEECH_REGION = 'southeastasia'
-$env:AZURE_TRANSLATOR_KEY = 'key-Anda'
-$env:AZURE_TRANSLATOR_REGION = 'southeastasia'
 .\.venv\Scripts\python.exe app.py
 ```
 
-Gunakan region sesuai resource Azure Anda. Pilih **Azure Speech** dan/atau **Microsoft Translator** di Pengaturan layanan. Penggunaan mengikuti tarif akun Azure. Aplikasi tidak membuat resource atau langganan Azure.
+Gunakan region sesuai resource Azure Anda. Pilih **Azure Speech** di Pengaturan layanan. Penggunaan mengikuti tarif akun Azure. Aplikasi tidak membuat resource atau langganan Azure.
 
-Referensi: [Microsoft Speech REST](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/rest-text-to-speech), [Microsoft Translator Translate](https://learn.microsoft.com/en-us/azure/ai-services/translator/text-translation/reference/v3/translate), [daftar suara Microsoft](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/language-support).
+Referensi: [Microsoft Speech REST](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/rest-text-to-speech), [daftar suara Microsoft](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/language-support).
 
 ## Supertonic 3: suara AI offline bawaan
 
 Pilih **Supertonic 3 · offline tanpa API**. Sepuluh preset M1–M5 dan F1–F5 serta 30 pilihan bahasa memakai model lokal; model penerjemah offline untuk bahasa tambahan diunduh satu kali saat bahasa tersebut pertama dipakai. Kode penerjemah Indonesia tetap dibundel. Pengaturan kecepatan, cache, antrean, pembatalan, dan hasil MP3/MP4 tetap tersedia.
 
-Menu **Pengaturan AI** dapat menyimpan API key OpenRouter dan memilih router/model gratis. Windows mengenkripsi key untuk profil pengguna lokal. Tombol **Perbaiki dengan AI** merapikan teks per kalimat; teks tersebut dikirim ke model OpenRouter yang dipilih, jadi fitur itu memerlukan internet. Penggunaan model gratis mengikuti ketersediaan dan batas OpenRouter. Menu samping membuka riwayat proyek dan playlist; tombol Hapus menghapus data proyek atau playlist unggahan aplikasi. Playlist folder lokal hanya menghapus entri, bukan berkas video sumber.
+Hasil terjemahan dapat diperiksa dan diedit manual sebelum dubbing. Menu samping membuka riwayat proyek dan playlist; tombol Hapus menghapus data proyek atau playlist unggahan aplikasi. Playlist folder lokal hanya menghapus entri, bukan berkas video sumber.
 
 Model resmi Supertonic sekitar **380 MiB / 399 MB** dibundel dalam EXE. Sepuluh file preset suara menambah aset kecil. Ukuran ini hanya model, bukan seluruh aplikasi atau kebutuhan RAM. Pemrosesan memakai ONNX Runtime CPU dengan maksimum 4 thread per sesi, tanpa PyTorch atau GPU. Teks panjang dipotong dan disimpan bertahap; proses model ditutup sesudah batch agar RAM dilepas. Sintesis suara tidak memakai layanan TTS atau API. Model terjemahan bahasa tambahan perlu diunduh sekali saat pertama digunakan.
 
@@ -135,3 +134,21 @@ MP4 menyertakan audio Indonesia sebagai track default, audio asli sebagai track 
 - **Model gagal diunduh:** periksa akses ke Hugging Face, atau gunakan subtitle Inggris SRT/VTT.
 - **Suara terlalu cepat:** ringkas teks Indonesia pada bagian yang ditandai, lalu buat ulang video.
 - **Ruang disk:** unggahan, cache audio, dan hasil disimpan dalam folder proyek. Setelah aplikasi ditutup, folder proyek di `data` yang tidak dibutuhkan dapat dihapus manual.
+
+
+## Google web dan pengurutan tabel
+
+Google web gratis tanpa API key adalah pilihan bawaan. Aplikasi memberi jeda minimal 5 detik antar kelompok dan menyimpan cache terjemahan; Google tetap dapat membatasi akses. Menu pengaturan Google API dan pilihan Google Cloud pada dropdown telah dihapus.
+
+Klik judul kolom History atau tabel isi Playlist untuk mengurutkan nama, status, bahasa, format, atau durasi; klik lagi untuk membalik arah. Nama menggunakan urutan angka alami (Lesson 2 sebelum Lesson 10). History diurutkan sebelum pagination dan pilihan proyek tetap tersimpan saat berganti urutan. Tombol Terbaru dahulu memulihkan urutan awal History. Di Playlist, klik No. untuk kembali ke urutan tersimpan. Play semua mengikuti urutan tabel. Daftar playlist juga dapat diurutkan berdasarkan nama atau jumlah video. Pilihan pengurutan tabel diingat di browser.
+
+Jalankan ulang lewat MULAI DUBBING.bat untuk memakai perubahan sumber. EXE lama perlu dibangun ulang.
+
+## Transkripsi multibahasa
+
+Whisper memakai Tiny, Base (bawaan), atau Small multibahasa. Bahasa audio dideteksi otomatis per video; Google web mengikuti bahasa tersebut. Subtitle masukan menggunakan deteksi otomatis Google. Untuk penerjemah lokal, subtitle masih diasumsikan berbahasa Inggris; audio non-Inggris memerlukan Google, kecuali bahasa sumber sudah sama dengan bahasa keluaran. Model multibahasa diunduh pada pemakaian pertama. Proyek lama dengan model `.en` menggunakan padanan multibahasa ketika ditranskripsi ulang. Audio campuran beberapa bahasa belum dideteksi per bagian.
+
+
+## Pemulihan terjemahan Google
+
+Hasil kosong dan kalimat panjang yang sama persis dengan sumber diperiksa ulang hingga tiga putaran, hanya untuk bagian tertinggal, menggunakan teks tanpa penanda kelompok. Hasil valid disimpan per potongan agar dapat dilanjutkan setelah gagal. Nama dan istilah pendek boleh tetap sama. Ini pemeriksaan kelengkapan sederhana, bukan jaminan akurasi bahasa. Jika bagian masih belum terkonfirmasi, dubbing tidak dimulai dan nomor bagian dilaporkan. HTTP 429 dicoba ulang dengan jeda 60 dan 120 detik, mengikuti Retry-After jika lebih lama dalam batas tunggu; penolakan yang terus terjadi tetap menghentikan proses. Tombol Lanjutkan memakai transkrip tersimpan jika sumber, subtitle, dan model tidak berubah.

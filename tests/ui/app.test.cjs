@@ -58,10 +58,7 @@ async function boot(t) {
     else if (url === '/api/jobs/review-demo') result = job;
     else if (url === '/api/jobs/review-demo/save') {
       job.segments[0].id = JSON.parse(options.body).translations[0]; result = job;
-    } else if (url === '/api/jobs/review-demo/improve/0') result = {text:'Bonjour et bienvenue.'};
-    else if (url === '/api/jobs/review-demo/grammar') result = {items:JSON.parse(options.body).items.map(item=>({...item,text:item.text.replace(' .','.'),warning:''}))};
-    else if (url === '/api/settings') result = {openrouter_configured:true, openrouter_model:'openrouter/free'};
-    else if (url === '/api/openrouter/models') result = [{id:'openrouter/free',name:'OpenRouter Free'}];
+    }
     else throw new Error('Unexpected API request: ' + url);
     return {ok:true, status:200, json:async () => result};
   };
@@ -73,7 +70,7 @@ async function boot(t) {
   return {w, document, job, calls, errors, historyJobs};
 }
 
-test('startup exposes voice and Whisper dropdowns, with OpenRouter settings visible', async t => {
+test('startup exposes voice and Whisper dropdowns, with supported translators', async t => {
   const {document:d} = await boot(t);
   assert.equal(d.getElementById('voice').options.length, 10);
   for (const id of ['tts','model','translator','voice','language']) {
@@ -81,7 +78,9 @@ test('startup exposes voice and Whisper dropdowns, with OpenRouter settings visi
     assert.equal(d.getElementById(id).closest('details'), null);
   }
   assert.equal(d.getElementById('model').options.length, 3);
-  assert.match(d.getElementById('openRouterSettings').textContent, /OpenRouter/);
+  assert.equal(d.getElementById('model').value, 'base');
+  assert.deepEqual([...d.getElementById('translator').options].map(o=>o.value), ['local','google']);
+  assert.equal(d.querySelector('#openRouterSettings, #openSettings, #settingsDialog'), null);
   const ids = [...d.querySelectorAll('[id]')].map(element => element.id);
   assert.equal(new Set(ids).size, ids.length);
 });
@@ -113,35 +112,6 @@ test('completed video and audio projects show selected-language subtitle downloa
   }
 });
 
-test('both OpenRouter buttons expose API key field and model dropdown; key remains masked', async t => {
-  const {document:d, calls} = await boot(t);
-  for (const id of ['openSettings', 'openRouterSettings']) {
-    await d.getElementById(id).onclick();
-    assert.equal(d.getElementById('settingsDialog').open, true);
-    assert.equal(d.getElementById('openrouterKey').type, 'password');
-    assert.match(d.getElementById('openrouterKey').value, /^\*+$/);
-    assert.equal(d.getElementById('openrouterKey').readOnly, true);
-    assert.equal(d.getElementById('openrouterModel').value, 'openrouter/free');
-  }
-  await d.getElementById('saveAiSettings').onclick();
-  assert.match(d.getElementById('settingsStatus').textContent, /tersimpan/);
-  assert.ok(calls.some(call => call.url==='/api/settings' && call.options.method==='POST'));
-  const saved = calls.find(call => call.url==='/api/settings' && call.options.method==='POST');
-  assert.equal(JSON.parse(saved.options.body).openrouter_key, '');
-  d.getElementById('changeOpenrouterKey').onclick();
-  assert.equal(d.getElementById('openrouterKey').readOnly, false);
-  assert.equal(d.getElementById('openrouterKey').value, '');
-  await d.getElementById('openRouterSettings').onclick();
-  assert.match(d.getElementById('openrouterKey').value, /^\*+$/);
-});
-
-test('OpenRouter is selectable as the translator', async t => {
-  const {w,document:d} = await boot(t);
-  d.getElementById('translator').value='openrouter';
-  assert.equal(w.settings().translator,'openrouter');
-  assert.equal(d.getElementById('translator').selectedOptions[0].disabled,false);
-});
-
 test('History is a separate paginated page with delete and project navigation', async t => {
   const {w,document:d} = await boot(t);
   assert.equal(d.querySelector('aside #history'),null);
@@ -167,68 +137,17 @@ test('History is a separate paginated page with delete and project navigation', 
   assert.equal(d.getElementById('notice').textContent,'');
 });
 
-test('OpenRouter improvement populates editor and can be saved', async t => {
-  const {w, document:d, job} = await boot(t);
-  await w.openProject('review-demo');
-  await d.querySelector('.improve-text').onclick();
-  assert.equal(d.querySelector('#segments textarea').value, 'Bonjour et bienvenue.');
+test('manual translation review saves without any grammar request', async t => {
+  const {w, document:d, job, calls} = await boot(t);
+  await w.openProject(job.id);
+  assert.equal(d.querySelector('#grammarAll, #grammarDialog, #undoGrammar, .improve-text'), null);
+  const area = d.querySelector('#segments textarea');
+  area.value = 'Bonjour et bienvenue.';
+  area.oninput();
   await d.getElementById('save').onclick();
   assert.equal(job.segments[0].id, 'Bonjour et bienvenue.');
-  assert.equal(d.getElementById('notice').textContent, '');
+  assert.ok(calls.every(call => !/\/grammar|\/improve\//.test(call.url)));
 });
-
-
-test('batch grammar previews all unsaved text across chunks, applies and undoes', async t => {
-  const {w,document:d,job,calls}=await boot(t);
-  job.segments=Array.from({length:10},()=>({start:0,end:1,en:'Hello.',id:'Bonjour.'}));
-  await w.openProject(job.id);
-  const areas=[...d.querySelectorAll('#segments textarea')];
-  areas.forEach(area=>{area.value='Bonjour .';});
-  await d.getElementById('grammarAll').onclick();
-  assert.equal(calls.filter(call=>call.url.endsWith('/grammar')).length,2);
-  assert.ok(areas.every(area=>area.value==='Bonjour .'));
-  assert.equal(d.querySelectorAll('.grammar-change').length,10);
-  assert.equal(d.getElementById('applyGrammar').disabled,false);
-  d.getElementById('applyGrammar').onclick();
-  assert.ok(areas.every(area=>area.value==='Bonjour.'));
-  d.getElementById('undoGrammar').onclick();
-  assert.ok(areas.every(area=>area.value==='Bonjour .'));
-});
-
-test('failed later batch preserves every original text', async t => {
-  const {w,document:d,job}=await boot(t);
-  job.segments=Array.from({length:10},()=>({start:0,end:1,en:'Hello.',id:'Bonjour .'}));
-  await w.openProject(job.id);
-  const fetch=w.fetch;let count=0;
-  w.fetch=async(url,options)=>{if(url.endsWith('/grammar') && ++count===2)throw new Error('Rate limit');return fetch(url,options);};
-  await d.getElementById('grammarAll').onclick();
-  assert.ok([...d.querySelectorAll('#segments textarea')].every(area=>area.value==='Bonjour .'));
-  assert.equal(d.getElementById('applyGrammar').disabled,true);
-  assert.match(d.getElementById('grammarStatus').textContent,/Rate limit/);
-});
-
-test('cancel ignores a late AI result', async t => {
-  const {w,document:d,job}=await boot(t);await w.openProject(job.id);
-  let resolve;
-  w.fetch=()=>new Promise(done=>{resolve=done;});
-  const pending=d.getElementById('grammarAll').onclick();
-  d.getElementById('cancelGrammar').onclick();
-  resolve({ok:true,json:async()=>({items:[{index:0,text:'Changed'}]})});
-  await pending;
-  assert.equal(d.querySelector('#segments textarea').value,'Bonjour.');
-  assert.equal(d.getElementById('applyGrammar').disabled,true);
-});
-
-test('batch refuses to overwrite concurrent editor changes', async t => {
-  const {w,document:d}=await boot(t); await w.openProject('review-demo');
-  const area=d.querySelector('#segments textarea');area.value='Bonjour .';
-  await d.getElementById('grammarAll').onclick();
-  area.value='Une nouvelle phrase.';
-  d.getElementById('applyGrammar').onclick();
-  assert.equal(area.value,'Une nouvelle phrase.');
-  assert.equal(d.getElementById('applyGrammar').disabled,true);
-});
-
 
 test('History table selects across pages and batch deletes only selected projects', async t => {
   const {w,document:d,calls,historyJobs}=await boot(t);await w.showHistoryPage();
@@ -276,4 +195,41 @@ test('History deletion cancellation and partial failure preserve unremoved selec
   await d.getElementById('historyDelete').onclick();assert.equal(historyJobs.length,22);
   assert.match(d.getElementById('notice').textContent,/1 gagal/);
   assert.match(d.getElementById('historySelection').textContent,/1 dipilih/);
+});
+
+
+test('Google API controls are removed and free Google remains selected', async t => {
+ const {document:d}=await boot(t);assert.equal(d.querySelector('#googleSettings, #googleDialog'),null);assert.equal(d.getElementById('translator').value,'google');
+});
+
+test('History sort toggles direction, resets pagination, preserves selection and persists', async t => {
+  const {w,document:d,calls}=await boot(t);await w.showHistoryPage();
+  const check=d.querySelector('#history input');check.checked=true;check.onchange();
+  await d.getElementById('historyNext').onclick();
+  await d.querySelector('[data-history-sort="title"] button').onclick();
+  assert.match(calls.at(-1).url,/page=1.*sort=title&direction=asc/);
+  assert.equal(d.querySelector('[data-history-sort="title"]').getAttribute('aria-sort'),'ascending');
+  await d.querySelector('[data-history-sort="title"] button').onclick();
+  assert.match(calls.at(-1).url,/direction=desc/);
+  assert.match(d.getElementById('historySelection').textContent,/1 dipilih/);
+  assert.equal(JSON.parse(w.localStorage.getItem('history-sort')).direction,'desc');
+  await d.getElementById('historyResetSort').onclick();
+  assert.match(calls.at(-1).url,/sort=order&direction=desc/);
+});
+
+test('Playlist sorts natural names and duration, and playback follows displayed order', async t => {
+  const {w,document:d,historyJobs}=await boot(t);
+  historyJobs.slice(0,2).forEach((item,i)=>{item.title=i?'Lesson 2':'Lesson 10';item.duration=i?10:100;item.status='done';item.media={mode:'video',media_url:'/result.mp4',download_url:'/result.mp4'};});
+  await w.showHistoryPage();
+  for(const check of [...d.querySelectorAll('#history input')].slice(0,2)){check.checked=true;check.onchange();}
+  await d.getElementById('historyPlaylist').onclick();d.getElementById('watchName').value='Sorted';await d.getElementById('watchCreateSave').onclick();
+  await d.querySelector('[data-watch-sort="title"] button').onclick();
+  assert.equal(d.querySelector('#watchDetails tbody tr td:nth-child(2)').textContent,'Lesson 2');
+  const play=[...d.querySelectorAll('#watchDetails button')].find(b=>b.textContent==='Play semua');await play.onclick();
+  assert.equal(d.getElementById('previewTitle').textContent,'Lesson 2');
+  d.getElementById('closePreview').onclick();
+  await d.querySelector('[data-watch-sort="duration"] button').onclick();
+  await d.querySelector('[data-watch-sort="duration"] button').onclick();
+  assert.equal(d.querySelector('#watchDetails tbody tr td:nth-child(2)').textContent,'Lesson 10');
+  assert.equal(d.querySelector('[data-watch-sort="duration"]').getAttribute('aria-sort'),'descending');
 });

@@ -10,7 +10,6 @@ import threading
 import uuid
 import tempfile
 import zipfile
-import requests
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -19,8 +18,6 @@ from werkzeug.exceptions import HTTPException
 from werkzeug.utils import secure_filename
 
 import engine
-import ai_settings
-from ai_settings import protect_secret
 from course_library import Courses
 from runtime_paths import BASE, DATA, LIBRARY, RESOURCES, configure
 
@@ -147,28 +144,24 @@ def options(data):
     from supertonic_voice import LANGUAGES
     tts = data.get("tts", default_tts())
     voice = data.get("voice", "supertonic-M1" if tts == "supertonic" else "id-ID-ArdiNeural")
-    translator = data.get("translator", "local")
-    model = data.get("model", "base.en")
+    translator = data.get("translator", "google")
+    model = data.get("model", "base").removesuffix(".en")
     rate = int(data.get("rate", 0))
     volume = float(data.get("original_volume", 0))
     output_mode = data.get("output_mode", "video")
     language = data.get('language', 'id')
     if output_mode not in {"video", "audio"}:
         raise ValueError("Format hasil tidak valid.")
-    if voice not in engine.VOICES or tts not in {"edge", "azure", "wikidepia", "onnx", "supertonic"} or translator not in {"local", "google", "azure", "openrouter"}:
+    if voice not in engine.VOICES or tts not in {"edge", "azure", "wikidepia", "onnx", "supertonic"} or translator not in engine.TRANSLATORS:
         raise ValueError("Pilihan suara atau layanan tidak valid.")
     if (tts == "supertonic") != (voice in supertonic_voices):
         raise ValueError("Pilih suara yang sesuai dengan mesin suara.")
     if language not in LANGUAGES:
         raise ValueError('Bahasa dubbing tidak tersedia.')
-    if language != 'id' and (tts != 'supertonic' or translator not in {'local', 'openrouter'}):
-        raise ValueError('Bahasa selain Indonesia memerlukan Supertonic dengan penerjemah Lokal atau OpenRouter.')
-    if model not in {"tiny.en", "base.en", "small.en"} or not -30 <= rate <= 30 or not 0 <= volume <= 0.5:
+    if language != 'id' and tts != 'supertonic':
+        raise ValueError('Bahasa selain Indonesia memerlukan Supertonic.')
+    if model not in {"tiny", "base", "small"} or not -30 <= rate <= 30 or not 0 <= volume <= 0.5:
         raise ValueError("Pilihan model, kecepatan, atau volume tidak valid.")
-    if translator == 'openrouter' and not read_user_settings()['openrouter_key']:
-        raise ValueError('Simpan API key OpenRouter di Pengaturan API OpenRouter terlebih dahulu.')
-    if translator == "azure" and not os.environ.get("AZURE_TRANSLATOR_KEY"):
-        raise ValueError("Microsoft Translator membutuhkan AZURE_TRANSLATOR_KEY pada environment Windows.")
     if tts == "azure" and not (os.environ.get("AZURE_SPEECH_KEY") and os.environ.get("AZURE_SPEECH_REGION")):
         raise ValueError("Azure Speech membutuhkan AZURE_SPEECH_KEY dan AZURE_SPEECH_REGION pada environment Windows.")
     if tts == "wikidepia":
@@ -236,104 +229,7 @@ def info():
                    voices=engine.VOICES, languages=LANGUAGES, default_language='id', ffmpeg=bool(shutil.which("ffmpeg") and shutil.which("ffprobe")),
                    wikidepia=ready(),
                    onnx=onnx_ready(), supertonic=supertonic_ready(), default_tts=default_tts(),
-                   azure_speech=bool(os.environ.get("AZURE_SPEECH_KEY") and os.environ.get("AZURE_SPEECH_REGION")),
-                   azure_translator=bool(os.environ.get("AZURE_TRANSLATOR_KEY")))
-
-
-def user_settings_path():
-    return DATA / 'settings.json'
-
-
-def read_user_settings():
-    return ai_settings.read_user_settings(user_settings_path())
-
-
-@app.get('/api/settings')
-def get_settings():
-    settings = read_user_settings()
-    return jsonify(openrouter_configured=bool(settings['openrouter_key']),
-                   openrouter_model=settings['openrouter_model'])
-
-
-@app.post('/api/settings')
-def set_settings():
-    incoming = request.get_json(force=True)
-    previous = read_user_settings()
-    key = incoming.get('openrouter_key', '')
-    if not key:
-        key = previous['openrouter_key']
-    if not isinstance(key, str) or (key and not key.startswith('sk-or-v1-')):
-        raise ValueError('Format kunci OpenRouter tidak valid.')
-    model = incoming.get('openrouter_model', previous['openrouter_model'])
-    if not isinstance(model, str) or (model != 'openrouter/free' and not re.fullmatch(r'[\w.-]+/[\w.-]+:free', model)):
-        raise ValueError('Pilih model gratis OpenRouter yang valid.')
-    target = user_settings_path()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_suffix('.tmp')
-    stored_key = {'openrouter_key_dpapi': protect_secret(key)} if key and os.name == 'nt' else {'openrouter_key': key}
-    temporary.write_text(json.dumps({**stored_key, 'openrouter_model': model}), encoding='utf-8')
-    temporary.replace(target)
-    return jsonify(openrouter_configured=bool(key), openrouter_model=model)
-
-
-@app.get('/api/openrouter/models')
-def openrouter_models():
-    try:
-        response = requests.get('https://openrouter.ai/api/v1/models', timeout=(10, 30))
-        response.raise_for_status()
-        models = response.json().get('data', [])
-        free = [{'id': item['id'], 'name': item.get('name', item['id'])} for item in models
-                if item.get('id', '').endswith(':free')
-                and item.get('pricing', {}).get('prompt') in ('0', 0)
-                and item.get('pricing', {}).get('completion') in ('0', 0)
-                and 'text' in item.get('architecture', {}).get('output_modalities', ['text'])]
-        free.sort(key=lambda item: item['name'].casefold())
-        return jsonify([{'id': 'openrouter/free', 'name': 'OpenRouter Free · otomatis'}, *free])
-    except requests.RequestException:
-        return jsonify([{'id': 'openrouter/free', 'name': 'OpenRouter Free · otomatis'}])
-
-
-@app.post('/api/jobs/<job_id>/grammar')
-def grammar_batch(job_id):
-    from grammar_ai import correct_items
-    data = request.get_json()
-    items = data.get('items') if isinstance(data, dict) else None
-    with lock:
-        job = find_job(job_id)
-        if job['status'] in ACTIVE or not job.get('segments'):
-            abort(409, 'Teks belum siap diperiksa.')
-        if not isinstance(items, list) or not 1 <= len(items) <= 8:
-            raise ValueError('Kirim 1 sampai 8 bagian per permintaan grammar.')
-        indices = set()
-        for item in items:
-            if (not isinstance(item, dict) or type(item.get('index')) is not int
-                    or not 0 <= item['index'] < len(job['segments'])
-                    or item['index'] in indices or not isinstance(item.get('text'), str)
-                    or not item['text'].strip() or len(item['text']) > 4000):
-                raise ValueError('Bagian grammar tidak valid.')
-            indices.add(item['index'])
-        if sum(len(item['text']) for item in items) > 8000:
-            raise ValueError('Teks per permintaan grammar terlalu panjang.')
-        language = job.get('language', 'id')
-        settings = read_user_settings()
-    return jsonify(items=correct_items(items, language, settings))
-
-
-@app.post('/api/jobs/<job_id>/improve/<int:index>')
-def improve_segment(job_id, index):
-    from grammar_ai import correct_items
-    with lock:
-        job = find_job(job_id)
-        if job['status'] in ACTIVE or not job.get('segments') or not 0 <= index < len(job['segments']):
-            abort(409, 'Teks belum siap diperbaiki.')
-        data = request.get_json(silent=True) or {}
-        text = data.get('text', job['segments'][index]['id'])
-        if not isinstance(text, str) or not text.strip() or len(text)>4000:
-            raise ValueError('Teks grammar tidak valid.')
-        language = job.get('language', 'id')
-        settings = read_user_settings()
-    result = correct_items([{'index':index, 'text':text}], language, settings)[0]
-    return jsonify(text=result['text'], warning=result['warning'])
+                   azure_speech=bool(os.environ.get("AZURE_SPEECH_KEY") and os.environ.get("AZURE_SPEECH_REGION")))
 
 
 @app.get("/api/library")
@@ -453,7 +349,6 @@ def list_jobs():
 
 @app.get('/api/history')
 def paginated_history():
-    from itertools import islice
     try:
         page = int(request.args.get('page', 1))
         page_size = int(request.args.get('page_size', 10))
@@ -461,13 +356,35 @@ def paginated_history():
         raise ValueError('Nomor halaman tidak valid.')
     if page < 1 or page_size not in {10, 20, 50}:
         raise ValueError('Pilihan halaman tidak valid.')
+    sort = request.args.get('sort', 'order')
+    direction = request.args.get('direction', 'desc')
+    if sort not in {'order', 'title', 'status', 'language', 'format', 'duration'} or direction not in {'asc', 'desc'}:
+        raise ValueError('Pilihan pengurutan tidak valid.')
     with lock:
         total = len(jobs)
         pages = max(1, math.ceil(total / page_size))
         page = min(page, pages)
         start = (page - 1) * page_size
-        items = [history_item(job) for job in islice(reversed(jobs.values()), start, start + page_size)]
-    return jsonify(items=items, total=total, page=page, pages=pages, page_size=page_size)
+        ordered = list(jobs.values())
+        if sort == 'order':
+            if direction == 'desc':
+                ordered.reverse()
+        else:
+            from supertonic_voice import LANGUAGES
+            labels = {'queued':'Menunggu', 'preparing':'Menerjemahkan', 'review':'Siap diperiksa',
+                      'rendering':'Membuat hasil', 'done':'Selesai', 'error':'Gagal',
+                      'cancelled':'Dibatalkan', 'interrupted':'Terputus'}
+            def value(job):
+                if sort == 'duration':
+                    return float(job.get('duration') or 0)
+                text = (LANGUAGES.get(job.get('language', 'id'), job.get('language', '')) if sort == 'language'
+                        else ('MP3' if job.get('output_mode') == 'audio' else 'MP4') if sort == 'format'
+                        else labels.get(job.get('status'), job.get('status', '')) if sort == 'status'
+                        else job.get('title', ''))
+                return [(1, int(part)) if part.isdigit() else (0, part.casefold()) for part in re.split(r'(\d+)', text)]
+            ordered.sort(key=value, reverse=direction == 'desc')
+        items = [history_item(job) for job in ordered[start:start + page_size]]
+    return jsonify(items=items, total=total, page=page, pages=pages, page_size=page_size, sort=sort, direction=direction)
 
 
 def history_item(job):
@@ -693,7 +610,14 @@ def save_edits(job_id):
             raise ValueError("Jumlah bagian terjemahan tidak sesuai.")
         if any(not isinstance(t, str) or not t.strip() or len(t) > 4000 for t in texts):
             raise ValueError("Setiap terjemahan harus berisi 1–4.000 karakter.")
-        selected = options({**job, **{k: data[k] for k in ("voice", "rate", "original_volume", "tts", "language", "translator") if k in data}})
+        incoming = {**job, **{k: data[k] for k in ("voice", "rate", "original_volume", "tts", "language", "translator") if k in data}}
+        # Completed translations remain editable even if their provider was retired.
+        retired = "translator" not in data and incoming.get("translator") not in engine.TRANSLATORS
+        if retired:
+            incoming["translator"] = "local"
+        selected = options(incoming)
+        if retired:
+            selected["translator"] = job["translator"]
         for segment, translated in zip(job["segments"], texts):
             segment["id"] = translated.strip()
         job.update(selected)
@@ -738,7 +662,7 @@ def file(job_id, name):
     with lock:
         job = find_job(job_id)
         from supertonic_voice import LANGUAGES
-        allowed = {"hasil.mp4", "hasil.mp3", "subtitle.en.srt", "subtitle.en.vtt", "transkrip.txt"}
+        allowed = {"hasil.mp4", "hasil.mp3", "subtitle.en.srt", "subtitle.en.vtt", "subtitle.source.srt", "subtitle.source.vtt", "transkrip.txt"}
         allowed.update(f'subtitle.{code}.{ext}' for code in LANGUAGES for ext in ('srt', 'vtt'))
         if name not in allowed:
             abort(404)
