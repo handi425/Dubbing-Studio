@@ -443,7 +443,11 @@ def render(job, update, check):
     has_audio = any(s["codec_type"] == "audio" for s in info["streams"])
     envelope = directory / 'background-gain.wav'
     if has_audio:
-        background_envelope(envelope, duration, speech_spans, job['original_volume'], check)
+        # Keep source audio only before the first dubbed cue and after the last
+        # one. This retains intro/outro music while preventing original dialogue
+        # from leaking through subtitle gaps during the lesson.
+        dubbing_window = [(segments[0]['start'], segments[-1]['end'])] if segments else []
+        background_envelope(envelope, duration, dubbing_window, 0, check)
     if job.get("output_mode") == "audio":
         update(progress=95, message="Menyimpan sulih suara sebagai MP3…")
         command = ["ffmpeg", "-y", "-v", "error", "-i", str(timeline)]
@@ -470,8 +474,6 @@ def render(job, update, check):
     else:
         command += ["-map", "1:a:0"]
     command += ["-map", "0:v:0", "-map", "2:s:0"]
-    if has_audio:
-        command += ["-map", "0:a:0", "-metadata:s:a:1", f"language={job.get('source_language', 'und')}", "-metadata:s:a:1", "title=Original audio", "-disposition:a:1", "0"]
     codec = next(s["codec_name"] for s in info["streams"] if s["codec_type"] == "video")
     command += ["-c:v", "copy"] if codec == "h264" else ["-c:v", "libx264", "-preset", "fast", "-crf", "20", "-pix_fmt", "yuv420p"]
     command += ["-c:a", "aac", "-b:a", "160k", "-c:s", "mov_text",
